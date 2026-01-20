@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+@theme {
+  /* ---------- COLORS ---------- */
+  --color-primary-red: #ff3355;
+  --color-primary-red-glow: rgba(255, 51, 85, 0.5);
+  --color-primary-blue: #3355ff;
+  --color-primary-blue-glow: rgba(51, 85, 255, 0.5);
+
+  --color-glass-bg: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --color-glass-highlight: rgba(255, 255, 255, 0.2);
+
+  --color-tekken-dark: #0a0a12;
+  --color-tekken-panel: #12121a;
+  --color-tekken-accent: #1a1a2e;
+  --color-tekken-gold: #ffd700;
+  --color-tekken-silver: #c0c0c0;
+
+  --color-type-normal: #A8A878;
+  --color-type-fire: #F08030;
+  --color-type-water: #6890F0;
+  --color-type-electric: #F8D030;
+  --color-type-grass: #78C850;
+  --color-type-ice: #98D8D8;
+  --color-type-fighting: #C03028;
+  --color-type-poison: #A040A0;
+  --color-type-ground: #E0C068;
+  --color-type-flying: #A890F0;
+  --color-type-psychic: #F85888;
+  --color-type-bug: #A8B820;
+  --color-type-rock: #B8A038;
+  --color-type-ghost: #705898;
+  --color-type-dragon: #7038F8;
+  --color-type-dark: #705848;
+  --color-type-steel: #B8B8D0;
+  --color-type-fairy: #EE99AC;
+
+  /* ---------- FONTS ---------- */
+  --font-orbitron: "Orbitron", sans-serif;
+  --font-rajdhani: "Rajdhani", sans-serif;
+
+  /* ---------- BACKGROUNDS ---------- */
+  --background-image-metallic: linear-gradient(
+    180deg,
+    #e8e8e8 0%,
+    #a8a8a8 50%,
+    #c8c8c8 100%
+  );
+
+  --background-image-chrome: linear-gradient(
+    180deg,
+    #f0f0f0 0%,
+    #888888 30%,
+    #a0a0a0 50%,
+    #707070 70%,
+    #909090 100%
+  );
+
+  --background-image-dark-metal: linear-gradient(
+    180deg,
+    #404050 0%,
+    #202030 50%,
+    #303040 100%
+  );
+
+  --background-image-tekken-frame: linear-gradient(
+    135deg,
+    #2a2a3a 0%,
+    #1a1a2a 50%,
+    #0a0a1a 100%
+  );
+
+  /* ---------- SHADOWS ---------- */
+  --shadow-glass:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  --shadow-neon-red:
+    0 0 20px rgba(255, 51, 85, 0.5),
+    0 0 40px rgba(255, 51, 85, 0.3);
+
+  --shadow-neon-blue:
+    0 0 20px rgba(51, 85, 255, 0.5),
+    0 0 40px rgba(51, 85, 255, 0.3);
+
+  --shadow-inner-light:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+
+  /* ---------- ANIMATIONS ---------- */
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+  --animate-slide-in-left: slide-in-left 0.5s ease-out;
+  --animate-slide-in-right: slide-in-right 0.5s ease-out;
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-spin-slow: spin 20s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 20px currentColor;
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 40px currentColor;
+  }
+}
+
+@keyframes slide-in-left {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-right {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Rajdhani', sans-serif;
+    background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 50%, #0a0a2a 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+    color: #fff;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-effect {
+    @apply backdrop-blur-xl bg-white/5 border border-white/10;
+  }
+
+  .metallic-frame {
+    background: linear-gradient(180deg, #3a3a4a 0%, #1a1a2a 50%, #2a2a3a 100%);
+    @apply p-[3px] rounded-lg;
+  }
+
+  .metallic-inner {
+    background: linear-gradient(180deg, #0a0a15 0%, #151520 100%);
+    @apply rounded-md;
+  }
+
+  .tekken-border {
+    @apply border-2 border-transparent;
+    background: linear-gradient(#12121a, #12121a) padding-box,
+                linear-gradient(135deg, #ffd700, #c0c0c0, #ffd700) border-box;
+  }
+
+  .text-gradient-title {
+    @apply bg-gradient-to-r from-primary-red via-white to-primary-blue bg-clip-text text-transparent;
+    background-size: 200% 100%;
+  }
+
+  .neon-text-red {
+    text-shadow: 0 0 10px rgba(255, 51, 85, 0.8), 0 0 20px rgba(255, 51, 85, 0.5);
+  }
+
+  .neon-text-blue {
+    text-shadow: 0 0 10px rgba(51, 85, 255, 0.8), 0 0 20px rgba(51, 85, 255, 0.5);
+  }
+
+  .health-bar-high {
+    @apply bg-gradient-to-b from-green-300 via-green-500 to-green-400;
+    box-shadow: 0 0 10px rgba(68, 255, 68, 0.5);
+  }
+
+  .health-bar-medium {
+    @apply bg-gradient-to-b from-yellow-300 via-yellow-500 to-yellow-400;
+    box-shadow: 0 0 10px rgba(255, 255, 68, 0.5);
+  }
+
+  .health-bar-low {
+    @apply bg-gradient-to-b from-red-300 via-red-500 to-red-400;
+    box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-white/10 rounded;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-primary-blue rounded;
+  }
+}
