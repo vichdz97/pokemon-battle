@@ -5,14 +5,12 @@ import { typeColors } from '../../utils/typeEffectiveness';
 
 interface MoveSelectorProps {
   moves: BattleMove[];
-  onSelectMove: (move: BattleMove, index: number) => void;
+  onSelectMove: (move: BattleMove) => void;
   onBack: () => void;
   disabled?: boolean;
 }
 
 export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: MoveSelectorProps) {
-  const formatMoveName = (name: string) => name.split('-').join(' ');
-
   return (
     <div className="grid grid-cols-2 gap-2.5 w-96">
       {moves.map((move, index) => {
@@ -24,15 +22,14 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
           <motion.button
             key={move.id || index}
             className={clsx(
-              'relative p-3 rounded-xl border-2 overflow-hidden',
-              'transition-all duration-300',
+              'relative p-3 rounded-xl border-2 overflow-hidden transition-all duration-300',
               isDisabled && 'opacity-40 cursor-not-allowed'
             )}
             style={{
               background: `linear-gradient(135deg, ${typeColor}44 0%, ${typeColor}22 100%)`,
               borderColor: typeColor,
             }}
-            onClick={() => !isDisabled && onSelectMove(move, index)}
+            onClick={() => !isDisabled && onSelectMove(move)}
             disabled={isDisabled}
             whileHover={!isDisabled ? { scale: 1.02, y: -2 } : {}}
             whileTap={!isDisabled ? { scale: 0.98 } : {}}
@@ -42,7 +39,7 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
             
             {/* Move name */}
             <div className="font-orbitron text-sm font-semibold text-white capitalize mb-2">
-              {formatMoveName(move.name)}
+              {move.name.split('-').join(' ')}
             </div>
             
             {/* Move info */}
@@ -70,14 +67,12 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
         );
       })}
       
-      {/* Back button */}
       <motion.button
         className={clsx(
           'col-span-2 py-2.5 rounded-xl',
           'bg-gradient-to-b from-white/10 via-white/5 to-white/8',
-          'border border-white/20',
-          'font-orbitron text-sm text-gray-400',
-          'hover:text-white hover:border-white/30',
+          'border border-white/20 hover:border-white/30',
+          'font-orbitron text-sm text-gray-400 hover:text-white',
           'transition-all duration-300'
         )}
         onClick={onBack}
@@ -88,4 +83,4 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
       </motion.button>
     </div>
   );
-};
+}

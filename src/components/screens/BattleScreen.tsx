@@ -2,218 +2,115 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
-import { calculateDamage, checkAccuracy, selectCpuMove } from '../../utils/battleCalculations';
-import { getEffectivenessMessage } from '../../utils/typeEffectiveness'; 
 import { PokemonSprite } from '../battle/PokemonSprite';
 import { ActionMenu } from '../battle/ActionMenu';
 import { MoveSelector } from '../battle/MoveSelector';
 import { BagMenu } from '../battle/BagMenu';
-import { useBattleLogic } from '../battle/BattleLogic';
+import { useBattle } from '../../hooks/useBattle';
 import { GlassButton } from '../common/GlassButton';
-import { BattleMove } from '../../types/pokemon';
+import { BattleMove, BattlePokemon } from '../../types/pokemon';
 import { Item } from '../../types/items';
 
 type MenuState = 'action' | 'moves' | 'bag';
 
 export function BattleScreen() {
   const navigate = useNavigate();
-  const { gameState, useItem, addBattleLog } = useGame();
+  const { gameState, useItem } = useGame();
   const [menuState, setMenuState] = useState<MenuState>('action');
-  const [currentMessage, setCurrentMessage] = useState<string>('');
-  const [finalMessage, setFinalMessage] = useState<string>('');
-  const [showMessage, setShowMessage] = useState(false);
-  const [playerAttacking, setPlayerAttacking] = useState(false);
-  const [cpuAttacking, setCpuAttacking] = useState(false);
-  const [playerDamaged, setPlayerDamaged] = useState(false);
-  const [cpuDamaged, setCpuDamaged] = useState(false);
-
-  const { playerPokemon, cpuPokemon } = gameState;
+  const [localPlayer, setLocalPlayer] = useState<BattlePokemon | null>(gameState.playerPokemon);
+  const [localCpu, setLocalCpu] = useState<BattlePokemon | null>(gameState.cpuPokemon);
 
   useEffect(() => {
-    if (!playerPokemon || !cpuPokemon) {
+    if (!gameState.playerPokemon || !gameState.cpuPokemon) {
       navigate('/selection');
+    } else {
+      setLocalPlayer({ ...gameState.playerPokemon });
+      setLocalCpu({ ...gameState.cpuPokemon });
     }
-  }, [playerPokemon, cpuPokemon, navigate]);
+  }, [gameState.playerPokemon, gameState.cpuPokemon, navigate]);
 
-  if (!playerPokemon || !cpuPokemon) {
-    return null;
-  }
+  const {
+    currentMessage,
+    showMessage,
+    playerAttacking,
+    cpuAttacking,
+    playerDamaged,
+    cpuDamaged,
+    battleEnded,
+    winner,
+    isProcessing,
+    executeTurn,
+    useItemAndEndTurn,
+    handleRun
+  } = useBattle(localPlayer, localCpu);
 
-  const displayMessage = (message: string) => {
-    if (message.includes('win') || message.includes('lost')) {
-      setFinalMessage(message);
-    } 
-    else {
-      setCurrentMessage(message);
-      setShowMessage(true);
-    }
-    setTimeout(() => {
-      setShowMessage(false);
-    }, 2000);
-  };
-
-  const handlePlayerAttack = (damage: number) => {
-    setPlayerAttacking(true);
-    setTimeout(() => {
-      setPlayerAttacking(false);
-      setCpuDamaged(true);
-      cpuPokemon.currentHp = Math.max(0, cpuPokemon.currentHp - damage);
-      setTimeout(() => setCpuDamaged(false), 1000);
-    }, 1000);
-  };
-
-  const handleCpuAttack = (damage: number) => {
-    setCpuAttacking(true);
-    setTimeout(() => {
-      setCpuAttacking(false);
-      setPlayerDamaged(true);
-      playerPokemon.currentHp = Math.max(0, playerPokemon.currentHp - damage);
-      setTimeout(() => setPlayerDamaged(false), 1000);
-    }, 1000);
-  };
-
-  const handleBattleEnd = (winner: 'player' | 'cpu') => {
-    const message = winner === 'player' 
-      ? 'You win! Congratulations!' 
-      : 'You lost. Better luck next time!';
-    
-    addBattleLog(message);
-    displayMessage(message);
-  };
-
-  const handleBattleLog = (message: string) => {
-    addBattleLog(message);
-    displayMessage(message);
-  };
-
-  const { processTurn, isProcessing, isBattleActive } = useBattleLogic({
-    playerPokemon,
-    cpuPokemon,
-    onPlayerAttack: handlePlayerAttack,
-    onCpuAttack: handleCpuAttack,
-    onBattleEnd: handleBattleEnd,
-    onBattleLog: handleBattleLog,
-  });
+  if (!localPlayer || !localCpu) return null;
 
   const handleMoveSelect = (move: BattleMove) => {
-    if (move.currentPp > 0) {
+    if (move.currentPp > 0 && !isProcessing) {
       move.currentPp--;
-      processTurn(move);
+      executeTurn(move);
       setMenuState('action');
     }
   };
 
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  const handleUseItem = async (item: Item) => {
-    if (item.type === 'healing' && playerPokemon) {
+  const handleUseItem = (item: Item) => {
+    if (isProcessing) return;
+    
+    if (item.type === 'healing') {
       const healAmount = item.effect?.heal || 0;
-      const actualHeal = Math.min(healAmount, playerPokemon.maxHp - playerPokemon.currentHp);
+      const actualHeal = Math.min(healAmount, localPlayer.maxHp - localPlayer.currentHp);
       
       if (actualHeal > 0) {
-        playerPokemon.currentHp = Math.min(playerPokemon.maxHp, playerPokemon.currentHp + healAmount);
+        setLocalPlayer(prev => prev ? { ...prev, currentHp: Math.min(prev.maxHp, prev.currentHp + healAmount) } : null);
         useItem(item.id);
-        displayMessage(`Used ${item.name}! Restored ${actualHeal} HP.`);
-        
-        // End turn after using item - trigger CPU attack with proper timing
-        await delay(2500);
-        
-        const cpuMove = selectCpuMove(cpuPokemon);
-        if (cpuMove && cpuMove.currentPp > 0) {
-          cpuMove.currentPp--;
-          
-          displayMessage(`${cpuPokemon.name} used ${cpuMove.name}!`);
-          await delay(2000);
-          
-          if (!checkAccuracy(cpuMove)) {
-            displayMessage("Attack missed!");
-            setMenuState('action');
-            return;
-          }
-          
-          const { damage, effectiveness, isCritical } = calculateDamage(
-            cpuPokemon,
-            playerPokemon,
-            cpuMove
-          );
-
-          console.log('currentHP', playerPokemon.currentHp)
-          console.log('damage', damage)
-          
-          handleCpuAttack(damage);
-          console.log('newHP', playerPokemon.currentHp)
-          await delay(1000);
-          
-          if (isCritical) {
-            displayMessage('A critical hit!');
-            await delay(2000);
-          }
-          
-          const effectivenessMsg = getEffectivenessMessage(effectiveness);
-          if (effectivenessMsg) {
-            displayMessage(effectivenessMsg);
-            await delay(2000);
-          }
-          
-          if (playerPokemon.currentHp - damage <= 0) {
-            await delay(500);
-            displayMessage(`${playerPokemon.name} fainted!`);
-            await delay(2000);
-            handleBattleEnd('cpu');
-          } else {
-            setMenuState('action');
-          }
-        }
-        
+        useItemAndEndTurn(item.name, actualHeal);
         setMenuState('action');
-      } else {
-        displayMessage('HP is already full!');
       }
-    } else if (item.type === 'revive' && playerPokemon) {
-      if (playerPokemon.currentHp <= 0) {
-        const reviveAmount = Math.floor(playerPokemon.maxHp / 2);
-        playerPokemon.currentHp = reviveAmount;
-        useItem(item.id);
-        displayMessage(`Used ${item.name}! ${playerPokemon.name} was revived!`);
-        setMenuState('action');
-      } else {
-        displayMessage('Pokemon is not fainted!');
-      }
+    } else if (item.type === 'revive' && localPlayer.currentHp <= 0) {
+      const reviveAmount = Math.floor(localPlayer.maxHp / 2);
+      setLocalPlayer(prev => prev ? { ...prev, currentHp: reviveAmount } : null);
+      useItem(item.id);
+      setMenuState('action');
     }
   };
 
-  const handleRun = () => {
-    displayMessage("Can't run from a trainer battle!");
+  const getFinalMessage = () => {
+    switch (winner) {
+      case 'player': return 'You win! Congratulations!';
+      case 'cpu': return 'You lost. Better luck next time!';
+      default: return '';
+    }
   };
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative overflow-hidden">
-      {/* Battle arena */}
+      {/* Battle Arena */}
       <div className="flex-1 relative p-4">
         {/* CPU Pokemon - upper right */}
         <div className="absolute top-8 right-8">
           <PokemonSprite
-            pokemon={cpuPokemon}
+            pokemon={localCpu}
             isPlayer={false}
             isAttacking={cpuAttacking}
             isTakingDamage={cpuDamaged}
-            isFainted={cpuPokemon.currentHp <= 0}
+            isFainted={localCpu.currentHp <= 0}
           />
         </div>
         
         {/* Player Pokemon - bottom left */}
         <div className="absolute bottom-32 left-8">
           <PokemonSprite
-            pokemon={playerPokemon}
+            pokemon={localPlayer}
             isPlayer={true}
             isAttacking={playerAttacking}
             isTakingDamage={playerDamaged}
-            isFainted={playerPokemon.currentHp <= 0}
+            isFainted={localPlayer.currentHp <= 0}
           />
         </div>
       </div>
 
-      {/* Battle log - appears at bottom when message is shown */}
+      {/* Battle Log */}
       <AnimatePresence>
         {showMessage && (
           <motion.div
@@ -232,40 +129,41 @@ export function BattleScreen() {
         )}
       </AnimatePresence>
 
-      {!isBattleActive && (playerPokemon.currentHp <= 0 || cpuPokemon.currentHp <= 0) ? (
-        <div className='absolute inset-0 flex items-center justify-center backdrop-blur-sm z-20'>
-          <AnimatePresence mode='wait'>
-            <motion.div
-              key="game-over"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="w-md h-md flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-4"
-            >
-              <h2 className="font-orbitron text-xl text-tekken-gold mb-3">
-                {finalMessage}
-              </h2>
-              <GlassButton variant="blue" size="medium" onClick={() => navigate('/')}>
-                Return Home
-              </GlassButton>
-            </motion.div>
-          </AnimatePresence>
+      {/* Battle End Modal */}
+      {battleEnded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-20">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-8"
+          >
+            <h2 className="font-orbitron text-2xl text-tekken-gold">
+              {getFinalMessage()}
+            </h2>
+            <GlassButton variant="gray" size="medium" onClick={() => navigate('/')}>
+              Return Home
+            </GlassButton>
+          </motion.div>
         </div>
-      ) : (
-        <div className='absolute bottom-4 right-4 z-20'>
-          <AnimatePresence mode='wait'>
+      )}
+
+      {/* Action Menu */}
+      {!battleEnded && (
+        <div className="absolute bottom-4 right-4 z-20">
+          <AnimatePresence mode="wait">
             <motion.div key={menuState}>
               {menuState === 'action' && (
                 <ActionMenu
                   onFight={() => setMenuState('moves')}
                   onBag={() => setMenuState('bag')}
-                  onRun={handleRun}
+                  onRun={() => handleRun(localPlayer, localCpu)}
                   disabled={isProcessing}
                 />
               )}
               
               {menuState === 'moves' && (
                 <MoveSelector
-                  moves={playerPokemon.selectedMoves}
+                  moves={localPlayer.selectedMoves}
                   onSelectMove={handleMoveSelect}
                   onBack={() => setMenuState('action')}
                   disabled={isProcessing}
