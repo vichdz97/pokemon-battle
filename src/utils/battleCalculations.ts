@@ -53,11 +53,7 @@ export const determineFirstAttacker = (
   const speed1 = getSpeedStat(pokemon1);
   const speed2 = getSpeedStat(pokemon2);
   
-  if (speed1 === speed2) {
-    return Math.random() < 0.5 ? 'pokemon1' : 'pokemon2';
-  }
-  
-  return speed1 > speed2 ? 'pokemon1' : 'pokemon2';
+  return speed1 >= speed2 ? 'pokemon1' : 'pokemon2';
 };
 
 export const checkAccuracy = (move: BattleMove): boolean => {
