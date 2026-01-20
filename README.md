@@ -1,73 +1,31 @@
-# React + TypeScript + Vite
+# Pokémon Battle Arena
+> [!NOTE]
+> Last updated January 19, 2026
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Summary
+Experience classic turn-based battles in this interactive Pokémon battle simulator with a sleek, animated interface.
 
-Currently, two official plugins are available:
+## Demo
+Live demo available soon...
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Technologies
+- [Axios](https://axios-http.com/) (*v1.13.2*)
+- [Framer Motion](https://motion.dev/) (*v12.27.1*)
+- [PokéAPI](https://pokeapi.co/) (*v2.0.0*)
+- [React](https://react.dev/) (*v19.2.0*)
+- [React Router](https://reactrouter.com) (*v7.12.0*)
+- [Tailwind CSS](https://tailwindcss.com/) (*v4.1.18*)
+- [TypeScript](https://www.typescriptlang.org/) (*v5.9.3*)
+- [Vite](https://vite.dev/) (*v7.2.4*)
 
-## React Compiler
+## Screenshots
+### Desktop View
+Pending...
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Mobile View
+Pending...
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Acknowledgments
+- Pokémon data provided by [PokéAPI](https://pokeapi.co/).
+- Pokémon is © Nintendo/Creatures Inc./GAME FREAK Inc.
+- This is a fan-made project and is not affiliated with or endorsed by Nintendo, Creatures Inc., or GAME FREAK Inc.
