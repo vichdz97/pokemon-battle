@@ -17,7 +17,8 @@ export const POKEMON_ROSTER: { id: number, category: string }[] = [
   { id: 131, category: "Water/Ice" },   // Lapras
   { id: 143, category: "Normal" },      // Snorlax
   { id: 149, category: "Dragon" },      // Dragonite
-  { id: 150, category: "Legendary" },   // Mewtwo
+  { id: 150, category: "Psychic" },     // Mewtwo
+  { id: 151, category: "Psychic" },     // Mew
 ];
 
 export const getPokemonCategory = (id: number): string => {
