@@ -29,7 +29,7 @@ export function HealthBar({ current, max, showText = true, size = 'medium' }: He
         <div className="flex justify-between items-center mb-1">
           <span className="font-rajdhani text-xs text-gray-400 uppercase">HP</span>
           <span className="font-orbitron text-xs text-white">
-            {current}/{max}
+            {Math.max(0, current)}/{max}
           </span>
         </div>
       )}
@@ -47,9 +47,9 @@ export function HealthBar({ current, max, showText = true, size = 'medium' }: He
             'absolute inset-y-0 left-0 rounded-full',
             getHealthColor()
           )}
-          initial={{ width: '100%' }}
+          initial={false}
           animate={{ width: `${percentage}%` }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
         />
         
         {/* Shine effect */}

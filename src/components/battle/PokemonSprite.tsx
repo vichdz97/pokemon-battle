@@ -24,23 +24,52 @@ export function PokemonSprite({
 
   return (
     <div className={clsx(
-      'relative',
-      isPlayer ? 'self-end' : 'self-start'
+      'flex flex-col',
+      isPlayer ? 'items-start' : 'items-end'
     )}>
+      {/* Player Pokemon - sprite above info box */}
+      {isPlayer && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${pokemon.id}-${isFainted}`}
+            className="relative mb-2"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ 
+              scale: isFainted ? 0 : 1, 
+              opacity: isFainted ? 0 : 1,
+              x: isAttacking ? 30 : 0,
+              y: isAttacking ? -20 : 0,
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.img
+              src={spriteUrl}
+              alt={pokemon.name}
+              className="w-40 h-40 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              animate={{
+                x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
+                filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
+              }}
+              transition={{ duration: 0.5 }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      )}
+
       {/* Pokemon info box */}
       <motion.div
         className={clsx(
-          'mb-4 p-3 rounded-lg backdrop-blur-xl',
+          'p-3 rounded-lg backdrop-blur-xl',
           'bg-gradient-to-br from-tekken-panel/80 to-tekken-dark/80',
           'border border-white/10',
-          'w-xs'
+          'w-72'
         )}
         initial={{ x: isPlayer ? -50 : 50, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
       >
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-orbitron text-lg font-bold text-white capitalize">
+          <h3 className="font-orbitron text-base font-bold text-white capitalize">
             {pokemon.name}
           </h3>
           <span className="font-orbitron text-sm text-gray-400">
@@ -48,7 +77,7 @@ export function PokemonSprite({
           </span>
         </div>
         
-        <HealthBar current={pokemon.currentHp} max={pokemon.maxHp} size="medium" />
+        <HealthBar current={pokemon.currentHp} max={pokemon.maxHp} size="small" />
         
         <div className="flex gap-1 mt-2">
           {pokemon.types.map((t) => (
@@ -63,32 +92,34 @@ export function PokemonSprite({
         </div>
       </motion.div>
 
-      {/* Pokemon sprite */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={`${pokemon.id}-${isFainted}`}
-          className="relative"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ 
-            scale: isFainted ? 0 : 1, 
-            opacity: isFainted ? 0 : 1,
-            x: isAttacking ? (isPlayer ? 30 : -30) : 0,
-            y: isAttacking ? (isPlayer ? -20 : 20) : 0,
-          }}
-          transition={{ duration: 0.3 }}
-        >
-          <motion.img
-            src={spriteUrl}
-            alt={pokemon.name}
-            className="w-48 h-48 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-            animate={{
-              x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
-              filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
+      {/* CPU Pokemon - sprite below info box */}
+      {!isPlayer && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${pokemon.id}-${isFainted}`}
+            className="relative mt-2"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ 
+              scale: isFainted ? 0 : 1, 
+              opacity: isFainted ? 0 : 1,
+              x: isAttacking ? -30 : 0,
+              y: isAttacking ? 20 : 0,
             }}
-            transition={{ duration: 0.5 }}
-          />
-        </motion.div>
-      </AnimatePresence>
+            transition={{ duration: 0.3 }}
+          >
+            <motion.img
+              src={spriteUrl}
+              alt={pokemon.name}
+              className="w-40 h-40 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              animate={{
+                x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
+                filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
+              }}
+              transition={{ duration: 0.5 }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      )}
     </div>
   );
 }

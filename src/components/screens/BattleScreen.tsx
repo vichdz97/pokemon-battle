@@ -20,6 +20,7 @@ export function BattleScreen() {
   const { gameState, useItem, addBattleLog } = useGame();
   const [menuState, setMenuState] = useState<MenuState>('action');
   const [currentMessage, setCurrentMessage] = useState<string>('');
+  const [finalMessage, setFinalMessage] = useState<string>('');
   const [showMessage, setShowMessage] = useState(false);
   const [playerAttacking, setPlayerAttacking] = useState(false);
   const [cpuAttacking, setCpuAttacking] = useState(false);
@@ -39,8 +40,13 @@ export function BattleScreen() {
   }
 
   const displayMessage = (message: string) => {
-    setCurrentMessage(message);
-    setShowMessage(true);
+    if (message.includes('win') || message.includes('lost')) {
+      setFinalMessage(message);
+    } 
+    else {
+      setCurrentMessage(message);
+      setShowMessage(true);
+    }
     setTimeout(() => {
       setShowMessage(false);
     }, 2000);
@@ -52,8 +58,8 @@ export function BattleScreen() {
       setPlayerAttacking(false);
       setCpuDamaged(true);
       cpuPokemon.currentHp = Math.max(0, cpuPokemon.currentHp - damage);
-      setTimeout(() => setCpuDamaged(false), 500);
-    }, 500);
+      setTimeout(() => setCpuDamaged(false), 1000);
+    }, 1000);
   };
 
   const handleCpuAttack = (damage: number) => {
@@ -62,8 +68,8 @@ export function BattleScreen() {
       setCpuAttacking(false);
       setPlayerDamaged(true);
       playerPokemon.currentHp = Math.max(0, playerPokemon.currentHp - damage);
-      setTimeout(() => setPlayerDamaged(false), 500);
-    }, 500);
+      setTimeout(() => setPlayerDamaged(false), 1000);
+    }, 1000);
   };
 
   const handleBattleEnd = (winner: 'player' | 'cpu') => {
@@ -97,7 +103,9 @@ export function BattleScreen() {
     }
   };
 
-  const handleUseItem = (item: Item) => {
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const handleUseItem = async (item: Item) => {
     if (item.type === 'healing' && playerPokemon) {
       const healAmount = item.effect?.heal || 0;
       const actualHeal = Math.min(healAmount, playerPokemon.maxHp - playerPokemon.currentHp);
@@ -105,50 +113,57 @@ export function BattleScreen() {
       if (actualHeal > 0) {
         playerPokemon.currentHp = Math.min(playerPokemon.maxHp, playerPokemon.currentHp + healAmount);
         useItem(item.id);
-        handleBattleLog(`Used ${item.name}! Restored ${actualHeal} HP.`);
+        displayMessage(`Used ${item.name}! Restored ${actualHeal} HP.`);
         
-        // End turn after using item - trigger CPU attack
-        setTimeout(() => {
-          const cpuMove = selectCpuMove(cpuPokemon);
-          if (cpuMove && cpuMove.currentPp > 0) {
-            cpuMove.currentPp--;
-            
-            displayMessage(`${cpuPokemon.name} used ${cpuMove.name}!`);
-            
-            setTimeout(() => {              
-              if (!checkAccuracy(cpuMove)) {
-                displayMessage("Attack missed!");
-                setMenuState('action');
-                return;
-              }
-              
-              const { damage, effectiveness, isCritical } = calculateDamage(
-                cpuPokemon,
-                playerPokemon,
-                cpuMove
-              );
-              
-              handleCpuAttack(damage);
-              
-              if (isCritical) {
-                displayMessage('A critical hit!');
-              }
-              
-              const effectivenessMsg = getEffectivenessMessage(effectiveness);
-              if (effectivenessMsg) {
-                setTimeout(() => displayMessage(effectivenessMsg), 1000);
-              }
-              
-              setTimeout(() => {
-                if (playerPokemon.currentHp <= 0) {
-                  handleBattleEnd('cpu');
-                } else {
-                  setMenuState('action');
-                }
-              }, 2000);
-            }, 1500);
+        // End turn after using item - trigger CPU attack with proper timing
+        await delay(2500);
+        
+        const cpuMove = selectCpuMove(cpuPokemon);
+        if (cpuMove && cpuMove.currentPp > 0) {
+          cpuMove.currentPp--;
+          
+          displayMessage(`${cpuPokemon.name} used ${cpuMove.name}!`);
+          await delay(2000);
+          
+          if (!checkAccuracy(cpuMove)) {
+            displayMessage("Attack missed!");
+            setMenuState('action');
+            return;
           }
-        }, 1000);
+          
+          const { damage, effectiveness, isCritical } = calculateDamage(
+            cpuPokemon,
+            playerPokemon,
+            cpuMove
+          );
+
+          console.log('currentHP', playerPokemon.currentHp)
+          console.log('damage', damage)
+          
+          handleCpuAttack(damage);
+          console.log('newHP', playerPokemon.currentHp)
+          await delay(1000);
+          
+          if (isCritical) {
+            displayMessage('A critical hit!');
+            await delay(2000);
+          }
+          
+          const effectivenessMsg = getEffectivenessMessage(effectiveness);
+          if (effectivenessMsg) {
+            displayMessage(effectivenessMsg);
+            await delay(2000);
+          }
+          
+          if (playerPokemon.currentHp - damage <= 0) {
+            await delay(500);
+            displayMessage(`${playerPokemon.name} fainted!`);
+            await delay(2000);
+            handleBattleEnd('cpu');
+          } else {
+            setMenuState('action');
+          }
+        }
         
         setMenuState('action');
       } else {
@@ -159,7 +174,7 @@ export function BattleScreen() {
         const reviveAmount = Math.floor(playerPokemon.maxHp / 2);
         playerPokemon.currentHp = reviveAmount;
         useItem(item.id);
-        handleBattleLog(`Used ${item.name}! ${playerPokemon.name} was revived!`);
+        displayMessage(`Used ${item.name}! ${playerPokemon.name} was revived!`);
         setMenuState('action');
       } else {
         displayMessage('Pokemon is not fainted!');
@@ -172,11 +187,11 @@ export function BattleScreen() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative">
-      {/* Battle arena - adjusted positioning */}
-      <div className="flex-1 grid grid-rows-2 p-8 pt-16">
-        {/* Top row - CPU Pokemon (upper right) */}
-        <div className="flex items-start justify-end pr-12">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative overflow-hidden">
+      {/* Battle arena */}
+      <div className="flex-1 relative p-4">
+        {/* CPU Pokemon - upper right */}
+        <div className="absolute top-8 right-8">
           <PokemonSprite
             pokemon={cpuPokemon}
             isPlayer={false}
@@ -186,8 +201,8 @@ export function BattleScreen() {
           />
         </div>
         
-        {/* Bottom row - Player Pokemon (bottom left) */}
-        <div className="flex items-end justify-start pl-12">
+        {/* Player Pokemon - bottom left */}
+        <div className="absolute bottom-32 left-8">
           <PokemonSprite
             pokemon={playerPokemon}
             isPlayer={true}
@@ -202,13 +217,14 @@ export function BattleScreen() {
       <AnimatePresence>
         {showMessage && (
           <motion.div
-            className="absolute bottom-24 left-0 right-0 px-8"
+            className="absolute bottom-20 left-0 right-0 px-6 z-10"
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 50, opacity: 0 }}
+            transition={{ duration: 0.3 }}
           >
-            <div className="bg-tekken-panel/95 backdrop-blur-xl border-2 border-white/20 rounded-lg p-6 max-w-4xl mx-auto">
-              <p className="font-rajdhani text-xl text-white text-center">
+            <div className="bg-tekken-panel/95 backdrop-blur-xl border-2 border-white/20 rounded-lg p-4 max-w-3xl mx-auto">
+              <p className="font-rajdhani text-lg text-white text-center">
                 {currentMessage}
               </p>
             </div>
@@ -216,24 +232,27 @@ export function BattleScreen() {
         )}
       </AnimatePresence>
 
-      {/* Action menu - bottom right corner, vertical stack */}
-      <div className="absolute bottom-6 right-6">
-        <AnimatePresence mode="wait">
-          {!isBattleActive ? (
+      {!isBattleActive && (playerPokemon.currentHp <= 0 || cpuPokemon.currentHp <= 0) ? (
+        <div className='absolute inset-0 flex items-center justify-center backdrop-blur-sm z-20'>
+          <AnimatePresence mode='wait'>
             <motion.div
               key="game-over"
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="text-center bg-tekken-panel/95 backdrop-blur-xl border border-white/20 rounded-lg p-6"
+              className="w-md h-md flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-4"
             >
-              <h2 className="font-orbitron text-2xl text-tekken-gold mb-4">
-                Battle Complete!
+              <h2 className="font-orbitron text-xl text-tekken-gold mb-3">
+                {finalMessage}
               </h2>
-              <GlassButton variant="blue" onClick={() => navigate('/')}>
+              <GlassButton variant="blue" size="medium" onClick={() => navigate('/')}>
                 Return Home
               </GlassButton>
             </motion.div>
-          ) : (
+          </AnimatePresence>
+        </div>
+      ) : (
+        <div className='absolute bottom-4 right-4 z-20'>
+          <AnimatePresence mode='wait'>
             <motion.div key={menuState}>
               {menuState === 'action' && (
                 <ActionMenu
@@ -262,9 +281,9 @@ export function BattleScreen() {
                 />
               )}
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

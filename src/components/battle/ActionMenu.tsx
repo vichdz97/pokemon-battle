@@ -11,14 +11,14 @@ interface ActionMenuProps {
 export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMenuProps) {
   return (
     <motion.div
-      className="flex flex-col gap-3 w-64"
+      className="flex flex-col gap-2 w-56"
       initial={{ x: 50, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
       <GlassButton
         variant="red"
-        size="large"
+        size="medium"
         onClick={onFight}
         disabled={disabled}
       >
@@ -27,7 +27,7 @@ export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMe
       
       <GlassButton
         variant="blue"
-        size="large"
+        size="medium"
         onClick={() => {}}
         disabled={disabled}
       >
@@ -36,7 +36,7 @@ export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMe
 
       <GlassButton
         variant="yellow"
-        size="large"
+        size="medium"
         onClick={onBag}
         disabled={disabled}
       >
@@ -45,7 +45,7 @@ export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMe
       
       <GlassButton
         variant="gray"
-        size="large"
+        size="medium"
         onClick={onRun}
         disabled={disabled}
       >
