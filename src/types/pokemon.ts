@@ -6,11 +6,14 @@ export interface Pokemon {
   sprites: {
     front_default: string;
     back_default: string;
-    other?: {
+    other: {
+      home: {
+        front_default: string;
+      };
       'official-artwork'?: {
         front_default: string;
       };
-      showdown?: {
+      showdown: {
         front_default: string;
         back_default: string;
       };

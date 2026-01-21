@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { Pokemon } from '../../types/pokemon';
-import { getOfficialArtwork } from '../../services/pokeApi';
+import { getPokemonHomeArtwork } from '../../services/pokeApi';
 import { typeColors } from '../../utils/typeEffectiveness';
 
 interface CharacterDisplayProps {
@@ -51,11 +51,11 @@ export function CharacterDisplay({ pokemon, side }: CharacterDisplayProps) {
               
               {/* Character sprite */}
               <img
-                src={getOfficialArtwork(pokemon)}
+                src={getPokemonHomeArtwork(pokemon)}
                 alt={pokemon.name}
                 className={clsx(
-                  'relative z-10 h-64 w-64 object-contain drop-shadow-2xl',
-                  isPlayer ? '' : 'scale-x-[-1]'
+                  'relative z-10 h-56 w-56 object-contain drop-shadow-2xl',
+                  isPlayer && 'scale-x-[-1]'
                 )}
               />
             </motion.div>
@@ -66,7 +66,7 @@ export function CharacterDisplay({ pokemon, side }: CharacterDisplayProps) {
       {/* Character name plate */}
       <div className="w-full py-4 px-6">
         <AnimatePresence mode="wait">
-          {pokemon ? (
+          {pokemon && (
             <motion.div
               key={pokemon.id}
               initial={{ y: 20, opacity: 0 }}
@@ -96,18 +96,6 @@ export function CharacterDisplay({ pokemon, side }: CharacterDisplayProps) {
                   </span>
                 ))}
               </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className={clsx(
-                isPlayer ? 'text-left' : 'text-right'
-              )}
-            >
-              <span className="font-orbitron text-xl text-gray-600 uppercase">
-                Select Pokémon
-              </span>
             </motion.div>
           )}
         </AnimatePresence>

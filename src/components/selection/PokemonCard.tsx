@@ -5,6 +5,7 @@ import { typeColors } from '../../utils/typeEffectiveness';
 
 interface PokemonCardProps {
   pokemon: Pokemon;
+  isPlayer: boolean;
   isSelected: boolean;
   isDisabled: boolean;
   onSelect: () => void;
@@ -13,6 +14,7 @@ interface PokemonCardProps {
 
 export function PokemonCard({ 
   pokemon, 
+  isPlayer,
   isSelected, 
   isDisabled, 
   onSelect, 
@@ -24,7 +26,7 @@ export function PokemonCard({
   return (
     <motion.button
       className={clsx(
-        'relative p-2 rounded-lg border-2 transition-all duration-200',
+        'relative p-2 rounded-lg border-2 transition-all duration-200 overflow-hidden',
         'bg-gradient-to-br from-tekken-panel to-tekken-dark',
         isSelected && 'ring-2 ring-primary-blue border-primary-blue',
         isDisabled && 'opacity-40 cursor-not-allowed',
@@ -42,15 +44,13 @@ export function PokemonCard({
     >
       {/* Pokemon sprite */}
       <img
-        src={pokemon.sprites.front_default}
+        src={pokemon.sprites.other.home.front_default}
         alt={pokemon.name}
-        className="w-16 h-16 object-contain mx-auto"
+        className={clsx(
+          'w-16 h-16 object-contain scale-y-[2]',
+          isPlayer ? 'scale-x-[-2]' : 'scale-x-[2]',
+        )}
       />
-      
-      {/* Pokemon name */}
-      <p className="font-rajdhani text-xs text-white capitalize truncate mt-1">
-        {pokemon.name}
-      </p>
       
       {/* Selection indicator */}
       {isSelected && (

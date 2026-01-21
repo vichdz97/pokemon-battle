@@ -18,7 +18,8 @@ export function SelectionScreen() {
   
   const [selectedPlayer, setSelectedPlayer] = useState<Pokemon | null>(null);
   const [selectedCpu, setSelectedCpu] = useState<Pokemon | null>(null);
-  const [hoveredPokemon, setHoveredPokemon] = useState<Pokemon | null>(null);
+  const [hoveredPlayerPokemon, setHoveredPlayerPokemon] = useState<Pokemon | null>(null);
+  const [hoveredCPUPokemon, setHoveredCPUPokemon] = useState<Pokemon | null>(null);
   const [isPreparingBattle, setIsPreparingBattle] = useState(false);
 
   const handleSelectPlayer = (poke: Pokemon) => {
@@ -37,12 +38,9 @@ export function SelectionScreen() {
     }
   };
 
-  const handleRandomCpu = () => {
-    const available = pokemon.filter(p => p.id !== selectedPlayer?.id);
-    if (available.length > 0) {
-      const randomIndex = Math.floor(Math.random() * available.length);
-      setSelectedCpu(available[randomIndex]);
-    }
+  const chooseRandomPokemon = (isPlayer: boolean) => {
+    const randomIndex = Math.floor(Math.random() * pokemon.length);
+    isPlayer ? setSelectedPlayer(pokemon[randomIndex]) : setSelectedCpu(pokemon[randomIndex]);
   };
 
   const handleStartBattle = async () => {
@@ -109,91 +107,95 @@ export function SelectionScreen() {
 
   return (
     <div className="min-h-screen p-6 bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent">
+      <h1 className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-orbitron text-9xl font-bold opacity-10">VS</h1>
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <motion.div
-          className="text-center mb-8"
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-        >
-          <h1 className="font-orbitron text-4xl font-bold text-gradient-title uppercase mb-2">
-            Select Your Pokémon
-          </h1>
-        </motion.div>
-
-        <div className="grid grid-cols-12 gap-6">
-          {/* Player selection */}
-          <div className="col-span-3">
-            <motion.div
-              initial={{ x: -50, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-            >
-              <h2 className="font-orbitron text-lg text-primary-blue uppercase mb-4">Your Pokémon</h2>
-              <div className="grid grid-cols-2 gap-2 max-h-[500px] overflow-y-auto scrollbar-thin p-2">
-                {pokemon.map((poke) => (
-                  <PokemonCard
-                    key={poke.id}
-                    pokemon={poke}
-                    isSelected={selectedPlayer?.id === poke.id}
-                    isDisabled={false}
-                    onSelect={() => handleSelectPlayer(poke)}
-                    onHover={setHoveredPokemon}
-                  />
-                ))}
+        <div className="grid grid-cols-2 grid-rows-2 gap-4">
+          {/* Player's Pokémon display */}
+          <div className="flex flex-col gap-4">
+            <h2 className="font-orbitron text-lg text-primary-blue uppercase">Your Pokémon</h2>
+            <div className="flex items-center justify-center">
+              {/* Stats panel */}
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                <StatsPanel pokemon={selectedPlayer || hoveredPlayerPokemon} />
+              </motion.div>
+              <div className="flex-1">
+                <CharacterDisplay pokemon={selectedPlayer || hoveredPlayerPokemon} side="player" />
               </div>
-            </motion.div>
+            </div>
           </div>
 
-          {/* Center displays */}
-          <div className="col-span-6">
-            <div className="grid grid-cols-2 gap-6">
-              <CharacterDisplay pokemon={selectedPlayer} side="player" />
-              <CharacterDisplay pokemon={selectedCpu} side="cpu" />
+          {/* CPU's Pokémon display */}
+          <div className="flex flex-col gap-4">
+            <h2 className="self-end font-orbitron text-lg text-primary-red uppercase">Opponent's Pokémon</h2>
+            <div className="flex items-center justify-center">
+              <div className="flex-1">
+                <CharacterDisplay pokemon={selectedCpu || hoveredCPUPokemon} side="cpu" />
+              </div>
+              {/* Stats panel */}
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                <StatsPanel pokemon={selectedCpu || hoveredCPUPokemon} />
+              </motion.div>
             </div>
-            
-            {/* Stats panel */}
-            <motion.div
-              className="mt-6"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
-              <StatsPanel pokemon={hoveredPokemon} />
-            </motion.div>
           </div>
+
+          {/* Player selection */}
+          <motion.div
+            className="flex flex-col items-center gap-4"
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(true)}>
+              Random
+            </GlassButton>
+            <div className="grid grid-cols-8 gap-2 overflow-y-auto scrollbar-thin p-2">
+              {pokemon.map((poke) => (
+                <PokemonCard
+                  key={poke.id}
+                  pokemon={poke}
+                  isPlayer={true}
+                  isSelected={selectedPlayer?.id === poke.id}
+                  isDisabled={false}
+                  onSelect={() => handleSelectPlayer(poke)}
+                  onHover={setHoveredPlayerPokemon}
+                />
+              ))}
+            </div>
+          </motion.div>
+
 
           {/* CPU selection */}
-          <div className="col-span-3">
-            <motion.div
-              initial={{ x: 50, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-orbitron text-lg text-primary-red uppercase">Opponent</h2>
-                <GlassButton
-                  variant="yellow"
-                  size="small"
-                  onClick={handleRandomCpu}
-                >
-                  Random
-                </GlassButton>
-              </div>
-              <div className="grid grid-cols-2 gap-2 max-h-[500px] overflow-y-auto scrollbar-thin p-2">
-                {pokemon.map((poke) => (
-                  <PokemonCard
-                    key={poke.id}
-                    pokemon={poke}
-                    isSelected={selectedCpu?.id === poke.id}
-                    isDisabled={false}
-                    onSelect={() => handleSelectCpu(poke)}
-                    onHover={setHoveredPokemon}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          </div>
+          <motion.div
+            className="flex flex-col items-center gap-4"
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+          >
+            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(false)}>
+              Random
+            </GlassButton>
+            <div className="grid grid-cols-8 gap-2 overflow-y-auto scrollbar-thin p-2">
+              {pokemon.map((poke) => (
+                <PokemonCard
+                  key={poke.id}
+                  pokemon={poke}
+                  isPlayer={false}
+                  isSelected={selectedCpu?.id === poke.id}
+                  isDisabled={false}
+                  onSelect={() => handleSelectCpu(poke)}
+                  onHover={setHoveredCPUPokemon}
+                />
+              ))}
+            </div>
+          </motion.div>
         </div>
 
         {/* Battle button */}
@@ -208,7 +210,7 @@ export function SelectionScreen() {
             size="large"
             onClick={() => navigate('/')}
           >
-            Back
+            ← Back
           </GlassButton>
           
           <GlassButton

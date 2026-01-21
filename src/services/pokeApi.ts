@@ -94,3 +94,8 @@ export const getOfficialArtwork = (pokemon: Pokemon): string => {
   return pokemon.sprites.other?.['official-artwork']?.front_default || 
          pokemon.sprites.front_default;
 };
+
+export const getPokemonHomeArtwork = (pokemon: Pokemon): string => {
+  return pokemon.sprites.other.home.front_default ||
+         pokemon.sprites.front_default;
+};

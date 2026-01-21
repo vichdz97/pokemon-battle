@@ -15,16 +15,16 @@ const statNameMap: Record<string, string> = {
 };
 
 const getStatColor = (value: number): string => {
-  if (value >= 120) return 'from-purple-400 to-purple-600';
-  if (value >= 100) return 'from-primary-blue to-blue-600';
-  if (value >= 80) return 'from-green-400 to-green-600';
+  if (value >= 150) return 'from-cyan-400 to-cyan-600';
+  if (value >= 120) return 'from-green-400 to-green-600';
+  if (value >= 90) return 'from-lime-400 to-lime-600';
   if (value >= 60) return 'from-yellow-400 to-yellow-600';
-  return 'from-primary-red to-red-600';
+  return 'from-orange-400 to-orange-600';
 };
 
 export function StatsPanel({ pokemon }: StatsPanelProps) {
   return (
-    <div className="bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-4 h-full">
+    <div className="min-h-85 bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-4 h-full">
       <h3 className="font-orbitron text-sm text-tekken-gold uppercase tracking-widest mb-4 text-center">
         Pokémon Stats
       </h3>
@@ -75,10 +75,10 @@ export function StatsPanel({ pokemon }: StatsPanelProps) {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center justify-center h-48"
+            className="flex items-center justify-center h-50"
           >
             <span className="font-rajdhani text-sm text-gray-600 text-center">
-              Hover over a<br />Pokémon to view stats
+              Hover over a<br />Pokémon to view its stats
             </span>
           </motion.div>
         )}
