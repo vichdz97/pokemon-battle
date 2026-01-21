@@ -43,6 +43,10 @@ export function useBattle(
     setShowMessage(false);
   }, []);
 
+  const transformName = (name: string): string => {
+    return name.split('-').map(n => n[0].toUpperCase() + n.slice(1)).join(' ');
+  };
+
   const performAttack = useCallback(async (
     attacker: BattlePokemon,
     defender: BattlePokemon,
@@ -50,12 +54,12 @@ export function useBattle(
     isPlayerAttacker: boolean
   ) => {
     // Show move usage
-    displayMessage(`${attacker.name} used ${move.name}!`);
+    displayMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
     await delay(2000);
 
     // Check accuracy
     if (!checkAccuracy(move)) {
-      displayMessage(`${attacker.name}'s attack missed!`);
+      displayMessage(`${transformName(attacker.name)}'s attack missed!`);
       await delay(2000);
       hideMessage();
       return { damage: 0, fainted: false };
@@ -103,7 +107,7 @@ export function useBattle(
     // Check if fainted
     const fainted = defender.currentHp <= 0;
     if (fainted) {
-      displayMessage(`${defender.name} fainted!`);
+      displayMessage(`${transformName(defender.name)} fainted!`);
       await delay(2000);
     }
 
@@ -118,7 +122,7 @@ export function useBattle(
 
     const cpuMove = selectCpuMove(cpuRef.current);
     if (!cpuMove) {
-      displayMessage(`${cpuRef.current.name} has no moves left!`);
+      displayMessage(`${transformName(cpuRef.current.name)} has no moves left!`);
       await delay(2000);
       setBattleEnded(true);
       setWinner('player');
@@ -170,7 +174,7 @@ export function useBattle(
     
     setIsProcessing(true);
 
-    displayMessage(`Used ${itemName}! Restored ${healAmount} HP.`);
+    displayMessage(`Used ${transformName(itemName)}! Restored ${healAmount} HP.`);
     await delay(2000);
 
     const cpuMove = selectCpuMove(cpuRef.current);

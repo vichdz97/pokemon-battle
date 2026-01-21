@@ -54,7 +54,7 @@ export const getTypeEffectiveness = (attackType: string, defenderTypes: string[]
 };
 
 export const getEffectivenessMessage = (effectiveness: number): string => {
-  if (effectiveness === 0) return "No effect!";
+  if (effectiveness === 0) return "It has no effect!";
   if (effectiveness < 1) return "It's not very effective...";
   if (effectiveness > 1) return "It's super effective!";
   return "";
