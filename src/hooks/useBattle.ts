@@ -9,6 +9,9 @@ import {
 import { getEffectivenessMessage } from '../utils/typeEffectiveness';
 import { useNavigate } from 'react-router-dom';
 
+const MESSAGE_DISPLAY_TIME = 1800;
+const MESSAGE_TRANSITION_TIME = 400;
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function useBattle(
@@ -34,13 +37,20 @@ export function useBattle(
     cpuRef.current = initialCpu;
   }, [initialPlayer, initialCpu]);
 
-  const displayMessage = useCallback((message: string) => {
+  const showBattleMessage = useCallback(async (message: string) => {
+    setShowMessage(false); // Hide current message first (if visible)
+    await delay(MESSAGE_TRANSITION_TIME); // Wait for exit animation to complete
+
+    // Set new message and show it
     setCurrentMessage(message);
     setShowMessage(true);
+    
+    await delay(MESSAGE_DISPLAY_TIME); // Wait for the message to be read
   }, []);
 
-  const hideMessage = useCallback(() => {
+  const hideMessage = useCallback(async () => {
     setShowMessage(false);
+    await delay(MESSAGE_TRANSITION_TIME);
   }, []);
 
   const transformName = (name: string): string => {
@@ -54,14 +64,12 @@ export function useBattle(
     isPlayerAttacker: boolean
   ) => {
     // Show move usage
-    displayMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
-    await delay(2000);
+    await showBattleMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
 
     // Check accuracy
     if (!checkAccuracy(move)) {
-      displayMessage(`${transformName(attacker.name)}'s attack missed!`);
-      await delay(2000);
-      hideMessage();
+      await showBattleMessage(`${transformName(attacker.name)}'s attack missed!`);
+      await hideMessage();
       return { damage: 0, fainted: false };
     }
 
@@ -71,49 +79,49 @@ export function useBattle(
     // Trigger attack animation
     if (isPlayerAttacker) {
       setPlayerAttacking(true);
-      setTimeout(() => setPlayerAttacking(false), 1000);
+      setTimeout(() => setPlayerAttacking(false), 800);
     } else {
       setCpuAttacking(true);
-      setTimeout(() => setCpuAttacking(false), 1000);
+      setTimeout(() => setCpuAttacking(false), 800);
     }
 
+    // Wait for attack animation to land
+    await delay(400);
+
     // Apply damage with visual feedback
-    await delay(500);
     defender.currentHp = Math.max(0, defender.currentHp - damage);
     
     if (isPlayerAttacker) {
       setCpuDamaged(true);
-      setTimeout(() => setCpuDamaged(false), 1000);
+      setTimeout(() => setCpuDamaged(false), 600);
     } else {
       setPlayerDamaged(true);
-      setTimeout(() => setPlayerDamaged(false), 1000);
+      setTimeout(() => setPlayerDamaged(false), 600);
     }
 
-    await delay(1500);
+    // Wait for damage animation
+    await delay(800);
 
     // Show critical hit
     if (isCritical) {
-      displayMessage('A critical hit!');
-      await delay(2000);
+      await showBattleMessage('A critical hit!');
     }
 
     // Show effectiveness
     const effectivenessMsg = getEffectivenessMessage(effectiveness);
     if (effectivenessMsg) {
-      displayMessage(effectivenessMsg);
-      await delay(2000);
+      await showBattleMessage(effectivenessMsg);
     }
 
     // Check if fainted
     const fainted = defender.currentHp <= 0;
     if (fainted) {
-      displayMessage(`${transformName(defender.name)} fainted!`);
-      await delay(2000);
+      await showBattleMessage(`${transformName(defender.name)} fainted!`);
     }
 
-    hideMessage();
+    await hideMessage();
     return { damage, fainted };
-  }, [displayMessage, hideMessage]);
+  }, [showBattleMessage, hideMessage]);
 
   const executeTurn = useCallback(async (playerMove: BattleMove) => {
     if (!playerRef.current || !cpuRef.current || isProcessing) return;
@@ -122,8 +130,8 @@ export function useBattle(
 
     const cpuMove = selectCpuMove(cpuRef.current);
     if (!cpuMove) {
-      displayMessage(`${transformName(cpuRef.current.name)} has no moves left!`);
-      await delay(2000);
+      await showBattleMessage(`${transformName(cpuRef.current.name)} has no moves left!`);
+      await hideMessage();
       setBattleEnded(true);
       setWinner('player');
       setIsProcessing(false);
@@ -152,6 +160,9 @@ export function useBattle(
       return;
     }
 
+    // Brief pause between attacks
+    await delay(600);
+
     // Second attack
     cpuMove.currentPp--;
     const secondResult = await performAttack(
@@ -167,19 +178,21 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, displayMessage]);
+  }, [isProcessing, performAttack, showBattleMessage, hideMessage]);
 
   const useItemAndEndTurn = useCallback(async (itemName: string, healAmount: number) => {
     if (!playerRef.current || !cpuRef.current || isProcessing) return;
     
     setIsProcessing(true);
 
-    displayMessage(`Used ${transformName(itemName)}! Restored ${healAmount} HP.`);
-    await delay(2000);
+    await showBattleMessage(`Used ${transformName(itemName)}! Restored ${healAmount} HP.`);
+    await hideMessage();
+
+    // Brief pause before CPU attacks
+    await delay(400);
 
     const cpuMove = selectCpuMove(cpuRef.current);
     if (!cpuMove || cpuMove.currentPp <= 0) {
-      hideMessage();
       setIsProcessing(false);
       return;
     }
@@ -193,23 +206,26 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, displayMessage, hideMessage]);
+  }, [isProcessing, performAttack, showBattleMessage, hideMessage]);
 
   const handleRun = useCallback(async (attacker: BattlePokemon, defender: BattlePokemon) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
     const speed1 = attacker.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
     const speed2 = defender.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
+
     if (speed1 >= speed2) {
-      setIsProcessing(true);
-      displayMessage("Escaped from battle!");
-      await delay(2000);
+      await showBattleMessage("Got away safely!");
+      await delay(500);
       navigate('/');
+    } else {
+      await showBattleMessage("Can't escape!");
+      await hideMessage();
     }
-    else {
-      displayMessage("Can't escape from battle!");
-      await delay(2000);
-      hideMessage();
-    }
-  }, [displayMessage, hideMessage]);
+
+    setIsProcessing(false);
+  }, [isProcessing, showBattleMessage, hideMessage, navigate]);
   
   return {
     currentMessage,
