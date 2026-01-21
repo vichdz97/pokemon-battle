@@ -13,9 +13,9 @@ interface PokemonSpriteProps {
   isFainted?: boolean;
 }
 
-export function PokemonSprite({ 
-  pokemon, 
-  isPlayer, 
+export function PokemonSprite({
+  pokemon,
+  isPlayer,
   isAttacking = false,
   isTakingDamage = false,
   isFainted = false
@@ -34,8 +34,8 @@ export function PokemonSprite({
             key={`${pokemon.id}-${isFainted}`}
             className="relative mb-2"
             initial={{ scale: 0, opacity: 0 }}
-            animate={{ 
-              scale: isFainted ? 0 : 1, 
+            animate={{
+              scale: isFainted ? 0 : 1,
               opacity: isFainted ? 0 : 1,
               x: isAttacking ? 30 : 0,
               y: isAttacking ? -20 : 0,
@@ -45,7 +45,7 @@ export function PokemonSprite({
             <motion.img
               src={spriteUrl}
               alt={pokemon.name}
-              className="w-40 h-40 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              className="w-70 h-70 object-contain translate-y-20 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
               animate={{
                 x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
                 filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
@@ -62,34 +62,35 @@ export function PokemonSprite({
           'p-3 rounded-lg backdrop-blur-xl',
           'bg-gradient-to-br from-tekken-panel/80 to-tekken-dark/80',
           'border border-white/10',
-          'w-72'
+          'w-75'
         )}
         initial={{ x: isPlayer ? -50 : 50, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5 }}
       >
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-orbitron text-base font-bold text-white capitalize">
-            {pokemon.name}
-          </h3>
+          <div className="flex items-center justify-center gap-2">
+            <h3 className="font-orbitron text-base font-bold text-white capitalize">
+              {pokemon.name}
+            </h3>
+            <div className="flex gap-1">
+              {pokemon.types.map((t) => (
+                <span
+                  key={t.type.name}
+                  className="px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white"
+                  style={{ backgroundColor: typeColors[t.type.name] || '#888' }}
+                >
+                  {t.type.name}
+                </span>
+              ))}
+            </div>
+          </div>
           <span className="font-orbitron text-sm text-gray-400">
             Lv.{pokemon.level}
           </span>
         </div>
-        
+
         <HealthBar current={pokemon.currentHp} max={pokemon.maxHp} size="small" />
-        
-        <div className="flex gap-1 mt-2">
-          {pokemon.types.map((t) => (
-            <span
-              key={t.type.name}
-              className="px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white"
-              style={{ backgroundColor: typeColors[t.type.name] || '#888' }}
-            >
-              {t.type.name}
-            </span>
-          ))}
-        </div>
       </motion.div>
 
       {/* CPU Pokemon - sprite below info box */}
@@ -99,8 +100,8 @@ export function PokemonSprite({
             key={`${pokemon.id}-${isFainted}`}
             className="relative mt-2"
             initial={{ scale: 0, opacity: 0 }}
-            animate={{ 
-              scale: isFainted ? 0 : 1, 
+            animate={{
+              scale: isFainted ? 0 : 1,
               opacity: isFainted ? 0 : 1,
               x: isAttacking ? -30 : 0,
               y: isAttacking ? 20 : 0,
@@ -110,7 +111,7 @@ export function PokemonSprite({
             <motion.img
               src={spriteUrl}
               alt={pokemon.name}
-              className="w-40 h-40 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              className="w-50 h-50 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
               animate={{
                 x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
                 filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',

@@ -15,11 +15,12 @@ export function BagMenu({ items, onUseItem, onBack, disabled = false }: BagMenuP
 
   return (
     <motion.div
-      className="w-80 space-y-3"
+      className="w-full md:w-80 space-y-3"
       initial={{ x: 50, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3 }}
     >
-      <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-4 max-h-96 overflow-y-auto scrollbar-thin">
+      <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-4 max-h-44 md:max-h-96 overflow-y-auto scrollbar-thin">
         {healingItems.length === 0 ? (
           <p className="text-gray-500 text-center font-rajdhani py-8">No items available</p>
         ) : (
@@ -32,7 +33,7 @@ export function BagMenu({ items, onUseItem, onBack, disabled = false }: BagMenuP
                   className={clsx(
                     'w-full p-3 rounded-lg transition-all duration-200',
                     'border-2',
-                    isRevive 
+                    isRevive
                       ? 'bg-gradient-to-r from-yellow-900/20 to-yellow-800/20 border-yellow-500/30 hover:border-yellow-500/50'
                       : 'bg-gradient-to-r from-green-900/20 to-green-800/20 border-green-500/30 hover:border-green-500/50',
                     disabled && 'opacity-50 cursor-not-allowed'
@@ -62,10 +63,11 @@ export function BagMenu({ items, onUseItem, onBack, disabled = false }: BagMenuP
           </div>
         )}
       </div>
-      
+
       <GlassButton
         variant="gray"
         className="w-full"
+        size="small"
         onClick={onBack}
       >
         ← Back

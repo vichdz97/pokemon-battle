@@ -24,11 +24,11 @@ const getStatColor = (value: number): string => {
 
 export function StatsPanel({ pokemon }: StatsPanelProps) {
   return (
-    <div className="min-h-85 bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-4 h-full">
-      <h3 className="font-orbitron text-sm text-tekken-gold uppercase tracking-widest mb-4 text-center">
-        Pokémon Stats
+    <div className="min-h-48 md:min-h-85 bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-3 md:p-4 h-full">
+      <h3 className="font-orbitron text-[10px] md:text-sm text-tekken-gold uppercase tracking-widest mb-2 md:mb-4 text-center">
+        Stats
       </h3>
-      
+
       <AnimatePresence mode="wait">
         {pokemon ? (
           <motion.div
@@ -36,19 +36,19 @@ export function StatsPanel({ pokemon }: StatsPanelProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-3"
+            className="space-y-2 md:space-y-3"
           >
             {pokemon.stats.map((stat, index) => (
-              <div key={stat.stat.name} className="space-y-1">
+              <div key={stat.stat.name} className="space-y-0.5 md:space-y-1">
                 <div className="flex justify-between items-center">
-                  <span className="font-rajdhani text-xs font-semibold text-gray-400 uppercase">
+                  <span className="font-rajdhani text-[10px] md:text-xs font-semibold text-gray-400 uppercase">
                     {statNameMap[stat.stat.name] || stat.stat.name}
                   </span>
-                  <span className="font-orbitron text-xs font-bold text-white">
+                  <span className="font-orbitron text-[10px] md:text-xs font-bold text-white">
                     {stat.base_stat}
                   </span>
                 </div>
-                <div className="h-2 bg-black/50 rounded overflow-hidden">
+                <div className="h-1.5 md:h-2 bg-black/50 rounded overflow-hidden">
                   <motion.div
                     className={`h-full rounded bg-gradient-to-r ${getStatColor(stat.base_stat)}`}
                     initial={{ width: 0 }}
@@ -58,14 +58,14 @@ export function StatsPanel({ pokemon }: StatsPanelProps) {
                 </div>
               </div>
             ))}
-            
+
             {/* Total Stats */}
-            <div className="pt-2 mt-2 border-t border-white/10">
+            <div className="pt-1 md:pt-2 mt-1 md:mt-2 border-t border-white/10">
               <div className="flex justify-between items-center">
-                <span className="font-rajdhani text-xs font-semibold text-tekken-gold uppercase">
+                <span className="font-rajdhani text-[10px] md:text-xs font-semibold text-tekken-gold uppercase">
                   Total
                 </span>
-                <span className="font-orbitron text-sm font-bold text-tekken-gold">
+                <span className="font-orbitron text-xs md:text-sm font-bold text-tekken-gold">
                   {pokemon.stats.reduce((sum, s) => sum + s.base_stat, 0)}
                 </span>
               </div>
@@ -75,14 +75,14 @@ export function StatsPanel({ pokemon }: StatsPanelProps) {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center justify-center h-50"
+            className="flex items-center justify-center h-32 md:h-50"
           >
-            <span className="font-rajdhani text-sm text-gray-600 text-center">
-              Hover over a<br />Pokémon to view its stats
+            <span className="font-rajdhani text-xs md:text-sm text-gray-600 text-center">
+              Hover over a<br />Pokémon to view stats
             </span>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
-};
+}

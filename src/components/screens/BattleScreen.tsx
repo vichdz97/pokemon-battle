@@ -56,11 +56,11 @@ export function BattleScreen() {
 
   const handleUseItem = (item: Item) => {
     if (isProcessing) return;
-    
+
     if (item.type === 'healing') {
       const healAmount = item.effect?.heal || 0;
       const actualHeal = Math.min(healAmount, localPlayer.maxHp - localPlayer.currentHp);
-      
+
       if (actualHeal > 0) {
         setLocalPlayer(prev => prev ? { ...prev, currentHp: Math.min(prev.maxHp, prev.currentHp + healAmount) } : null);
         useItem(item.id);
@@ -85,10 +85,10 @@ export function BattleScreen() {
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative overflow-hidden">
-      {/* Battle Arena */}
-      <div className="flex-1 relative p-4">
+      {/* ===== ARENA SECTION (top 2/3 on mobile, flex-1 on desktop) ===== */}
+      <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">
         {/* CPU Pokemon - upper right */}
-        <div className="absolute top-8 right-8">
+        <div className="absolute top-4 right-4 md:top-8 md:right-8 scale-75 md:scale-100 origin-top-right">
           <PokemonSprite
             pokemon={localCpu}
             isPlayer={false}
@@ -97,9 +97,9 @@ export function BattleScreen() {
             isFainted={localCpu.currentHp <= 0}
           />
         </div>
-        
-        {/* Player Pokemon - bottom left */}
-        <div className="absolute bottom-32 left-8">
+
+        {/* Player Pokemon - bottom left of arena */}
+        <div className="absolute bottom-4 left-4 md:bottom-32 md:left-8 scale-75 md:scale-100 origin-bottom-left">
           <PokemonSprite
             pokemon={localPlayer}
             isPlayer={true}
@@ -108,50 +108,35 @@ export function BattleScreen() {
             isFainted={localPlayer.currentHp <= 0}
           />
         </div>
+
+        {/* Battle Log - positioned within the arena area */}
+        <AnimatePresence>
+          {showMessage && (
+            <motion.div
+              className="absolute bottom-2 left-2 right-2 md:bottom-20 md:left-0 md:right-0 md:px-6 z-10"
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 30, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="bg-tekken-panel/95 backdrop-blur-xl border-2 border-white/20 rounded-lg p-3 md:p-4 max-w-3xl mx-auto">
+                <p className="font-rajdhani text-sm md:text-lg text-white text-center">
+                  {currentMessage}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Battle Log */}
-      <AnimatePresence>
-        {showMessage && (
-          <motion.div
-            className="absolute bottom-20 left-0 right-0 px-6 z-10"
-            initial={{ y: 50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 50, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="bg-tekken-panel/95 backdrop-blur-xl border-2 border-white/20 rounded-lg p-4 max-w-3xl mx-auto">
-              <p className="font-rajdhani text-lg text-white text-center">
-                {currentMessage}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Battle End Modal */}
-      {battleEnded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-20">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-8"
-          >
-            <h2 className="font-orbitron text-2xl text-tekken-gold">
-              {getFinalMessage()}
-            </h2>
-            <GlassButton variant="gray" size="medium" onClick={() => navigate('/')}>
-              Return Home
-            </GlassButton>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Action Menu */}
+      {/* ===== ACTION SECTION (bottom 1/3 on mobile) ===== */}
       {!battleEnded && (
-        <div className="absolute bottom-4 right-4 z-20">
+        <div className="h-[34vh] md:h-auto md:absolute md:bottom-4 md:right-4 z-20 border-t border-white/10 md:border-0 bg-tekken-dark/90 md:bg-transparent backdrop-blur-md md:backdrop-blur-none p-3 md:p-0 flex items-center justify-center">
           <AnimatePresence mode="wait">
-            <motion.div key={menuState}>
+            <motion.div
+              key={menuState}
+              className="w-full h-full max-w-md md:max-w-none md:w-auto"
+            >
               {menuState === 'action' && (
                 <ActionMenu
                   onFight={() => setMenuState('moves')}
@@ -160,7 +145,7 @@ export function BattleScreen() {
                   disabled={isProcessing}
                 />
               )}
-              
+
               {menuState === 'moves' && (
                 <MoveSelector
                   moves={localPlayer.selectedMoves}
@@ -169,7 +154,7 @@ export function BattleScreen() {
                   disabled={isProcessing}
                 />
               )}
-              
+
               {menuState === 'bag' && (
                 <BagMenu
                   items={gameState.inventory}
@@ -180,6 +165,24 @@ export function BattleScreen() {
               )}
             </motion.div>
           </AnimatePresence>
+        </div>
+      )}
+
+      {/* Battle End Modal */}
+      {battleEnded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-30">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-6 md:p-8 mx-4"
+          >
+            <h2 className="font-orbitron text-xl md:text-2xl text-tekken-gold text-center">
+              {getFinalMessage()}
+            </h2>
+            <GlassButton variant="gray" size="medium" onClick={() => navigate('/')}>
+              Return Home
+            </GlassButton>
+          </motion.div>
         </div>
       )}
     </div>

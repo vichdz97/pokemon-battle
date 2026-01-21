@@ -12,13 +12,13 @@ interface PokemonCardProps {
   onHover: (pokemon: Pokemon | null) => void;
 }
 
-export function PokemonCard({ 
-  pokemon, 
+export function PokemonCard({
+  pokemon,
   isPlayer,
-  isSelected, 
-  isDisabled, 
-  onSelect, 
-  onHover 
+  isSelected,
+  isDisabled,
+  onSelect,
+  onHover
 }: PokemonCardProps) {
   const mainType = pokemon.types[0]?.type.name || 'normal';
   const typeColor = typeColors[mainType];
@@ -26,7 +26,7 @@ export function PokemonCard({
   return (
     <motion.button
       className={clsx(
-        'relative p-2 rounded-lg border-2 transition-all duration-200 overflow-hidden',
+        'relative flex items-center justify-center p-1.5 md:p-2 rounded-lg border-2 transition-all duration-200 overflow-hidden',
         'bg-gradient-to-br from-tekken-panel to-tekken-dark',
         isSelected && 'ring-2 ring-primary-blue border-primary-blue',
         isDisabled && 'opacity-40 cursor-not-allowed',
@@ -38,6 +38,7 @@ export function PokemonCard({
       onClick={onSelect}
       onMouseEnter={() => onHover(pokemon)}
       onMouseLeave={() => onHover(null)}
+      onTouchStart={() => onHover(pokemon)}
       disabled={isDisabled}
       whileHover={!isDisabled ? { scale: 1.05 } : {}}
       whileTap={!isDisabled ? { scale: 0.95 } : {}}
@@ -47,11 +48,11 @@ export function PokemonCard({
         src={pokemon.sprites.other.home.front_default}
         alt={pokemon.name}
         className={clsx(
-          'w-16 h-16 object-contain scale-y-[2]',
+          'w-12 h-12 md:w-16 md:h-16 object-contain scale-y-[2]',
           isPlayer ? 'scale-x-[-2]' : 'scale-x-[2]',
         )}
       />
-      
+
       {/* Selection indicator */}
       {isSelected && (
         <motion.div
