@@ -10,12 +10,13 @@ import { useBattle } from '../../hooks/useBattle';
 import { GlassButton } from '../common/GlassButton';
 import { BattleMove, BattlePokemon } from '../../types/pokemon';
 import { Item } from '../../types/items';
+import { getRandomMoves } from '../../services/pokeApi';
 
 type MenuState = 'action' | 'moves' | 'bag';
 
 export function BattleScreen() {
   const navigate = useNavigate();
-  const { gameState, useItem } = useGame();
+  const { gameState, useItem, resetInventory } = useGame();
   const [menuState, setMenuState] = useState<MenuState>('action');
   const [localPlayer, setLocalPlayer] = useState<BattlePokemon | null>(gameState.playerPokemon);
   const [localCpu, setLocalCpu] = useState<BattlePokemon | null>(gameState.cpuPokemon);
@@ -41,7 +42,8 @@ export function BattleScreen() {
     isProcessing,
     executeTurn,
     useItemAndEndTurn,
-    handleRun
+    handleRun,
+    resetBattle
   } = useBattle(localPlayer, localCpu);
 
   if (!localPlayer || !localCpu) return null;
@@ -72,6 +74,36 @@ export function BattleScreen() {
       setLocalPlayer(prev => prev ? { ...prev, currentHp: reviveAmount } : null);
       useItem(item.id);
       setMenuState('action');
+    }
+  };
+
+  const handleRematch = async () => {
+    if (!gameState.playerPokemon || !gameState.cpuPokemon) return;
+    try {
+      const [playerMoves, cpuMoves] = await Promise.all([
+        getRandomMoves(gameState.playerPokemon),
+        getRandomMoves(gameState.cpuPokemon)
+      ]);
+
+      const freshPlayer: BattlePokemon = {
+        ...gameState.playerPokemon,
+        currentHp: gameState.playerPokemon.maxHp,
+        selectedMoves: playerMoves
+      };
+
+      const freshCpu: BattlePokemon = {
+        ...gameState.cpuPokemon,
+        currentHp: gameState.cpuPokemon.maxHp,
+        selectedMoves: cpuMoves
+      };
+
+      setLocalPlayer(freshPlayer);
+      setLocalCpu(freshCpu);
+      resetInventory();
+      resetBattle();
+      setMenuState('action');
+    } catch (error) {
+      console.error('Failed to reset battle:', error);
     }
   };
 
@@ -109,7 +141,7 @@ export function BattleScreen() {
           />
         </div>
 
-        {/* Battle Log - positioned within the arena area */}
+        {/* Battle Log */}
         <AnimatePresence>
           {showMessage && (
             <motion.div
@@ -174,14 +206,40 @@ export function BattleScreen() {
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="flex flex-col items-center gap-4 bg-tekken-panel border border-white/20 rounded-lg p-6 md:p-8 mx-4"
+            className="flex flex-col items-center gap-5 bg-tekken-panel border border-white/20 rounded-lg p-6 md:p-8 mx-4 w-full max-w-sm"
           >
             <h2 className="font-orbitron text-xl md:text-2xl text-tekken-gold text-center">
               {getFinalMessage()}
             </h2>
-            <GlassButton variant="gray" size="medium" onClick={() => navigate('/')}>
-              Return Home
-            </GlassButton>
+
+            <div className="flex flex-col gap-3 w-full">
+              <GlassButton
+                variant="blue"
+                size="medium"
+                className="w-full"
+                onClick={handleRematch}
+              >
+                Rematch
+              </GlassButton>
+
+              <GlassButton
+                variant="red"
+                size="medium"
+                className="w-full"
+                onClick={() => navigate('/selection')}
+              >
+                Change Pokémon
+              </GlassButton>
+
+              <GlassButton
+                variant="gray"
+                size="medium"
+                className="w-full"
+                onClick={() => navigate('/')}
+              >
+                Return Home
+              </GlassButton>
+            </div>
           </motion.div>
         </div>
       )}

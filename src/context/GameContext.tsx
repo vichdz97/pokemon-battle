@@ -17,6 +17,7 @@ interface GameContextType {
   useItem: (itemId: string) => void;
   addBattleLog: (message: string) => void;
   resetGame: () => void;
+  resetInventory: () => void;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -68,6 +69,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const resetInventory = () => {
+    setGameState(prev => ({
+      ...prev,
+      inventory: [...STARTER_ITEMS],
+      battleHistory: [],
+    }));
+  };
+
   return (
     <GameContext.Provider
       value={{
@@ -78,6 +87,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         useItem,
         addBattleLog,
         resetGame,
+        resetInventory,
       }}
     >
       {children}

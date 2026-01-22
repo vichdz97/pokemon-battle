@@ -63,17 +63,14 @@ export function useBattle(
     move: BattleMove,
     isPlayerAttacker: boolean
   ) => {
-    // Show move usage
     await showBattleMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
 
-    // Check accuracy
     if (!checkAccuracy(move)) {
       await showBattleMessage(`${transformName(attacker.name)}'s attack missed!`);
       await hideMessage();
       return { damage: 0, fainted: false };
     }
 
-    // Calculate damage
     const { damage, effectiveness, isCritical } = calculateDamage(attacker, defender, move);
 
     // Trigger attack animation
@@ -102,22 +99,13 @@ export function useBattle(
     // Wait for damage animation
     await delay(800);
 
-    // Show critical hit
-    if (isCritical) {
-      await showBattleMessage('A critical hit!');
-    }
+    if (isCritical) await showBattleMessage('A critical hit!');
 
-    // Show effectiveness
     const effectivenessMsg = getEffectivenessMessage(effectiveness);
-    if (effectivenessMsg) {
-      await showBattleMessage(effectivenessMsg);
-    }
+    if (effectivenessMsg) await showBattleMessage(effectivenessMsg);
 
-    // Check if fainted
     const fainted = defender.currentHp <= 0;
-    if (fainted) {
-      await showBattleMessage(`${transformName(defender.name)} fainted!`);
-    }
+    if (fainted) await showBattleMessage(`${transformName(defender.name)} fainted!`);
 
     await hideMessage();
     return { damage, fainted };
@@ -145,7 +133,6 @@ export function useBattle(
     const secondMove = playerGoesFirst ? cpuMove : playerMove;
     const firstIsPlayer = playerGoesFirst;
 
-    // First attack
     const firstResult = await performAttack(
       firstAttacker,
       secondAttacker,
@@ -163,7 +150,6 @@ export function useBattle(
     // Brief pause between attacks
     await delay(600);
 
-    // Second attack
     cpuMove.currentPp--;
     const secondResult = await performAttack(
       secondAttacker,
@@ -226,6 +212,18 @@ export function useBattle(
 
     setIsProcessing(false);
   }, [isProcessing, showBattleMessage, hideMessage, navigate]);
+
+  const resetBattle = useCallback(() => {
+    setCurrentMessage('');
+    setShowMessage(false);
+    setPlayerAttacking(false);
+    setCpuAttacking(false);
+    setPlayerDamaged(false);
+    setCpuDamaged(false);
+    setBattleEnded(false);
+    setWinner(null);
+    setIsProcessing(false);
+  }, []);
   
   return {
     currentMessage,
@@ -239,6 +237,7 @@ export function useBattle(
     isProcessing,
     executeTurn,
     useItemAndEndTurn,
-    handleRun
+    handleRun,
+    resetBattle
   };
 }
