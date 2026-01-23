@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
@@ -17,13 +17,24 @@ type MenuState = 'action' | 'moves' | 'bag' | 'pokemon';
 
 export function BattleScreen() {
   const navigate = useNavigate();
-  const { gameState, useItem, resetInventory, setPlayerTeam, setCpuTeam, setActivePlayerIndex, setActiveCpuIndex } = useGame();
+  const { 
+    gameState, 
+    useItem, 
+    resetInventory, 
+    setPlayerTeam, 
+    setCpuTeam, 
+    setActivePlayerIndex, 
+    setActiveCpuIndex 
+  } = useGame();
+
   const [menuState, setMenuState] = useState<MenuState>('action');
   const [localPlayerTeam, setLocalPlayerTeam] = useState<BattlePokemon[]>(gameState.playerTeam);
   const [localCpuTeam, setLocalCpuTeam] = useState<BattlePokemon[]>(gameState.cpuTeam);
   const [localPlayerIndex, setLocalPlayerIndex] = useState(gameState.activePlayerIndex);
   const [localCpuIndex, setLocalCpuIndex] = useState(gameState.activeCpuIndex);
   const [isResetting, setIsResetting] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (gameState.playerTeam.length === 0 || gameState.cpuTeam.length === 0) {
@@ -35,6 +46,35 @@ export function BattleScreen() {
       setLocalCpuIndex(gameState.activeCpuIndex);
     }
   }, [gameState.playerTeam, gameState.cpuTeam, gameState.activePlayerIndex, gameState.activeCpuIndex, navigate, isResetting]);
+
+  // Play battle music
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio('/src/assets/sounds/battle.mp3');
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.5; // 50% volume
+    }
+
+    const battleMusic = audioRef.current;
+
+    const playMusic = async () => {
+      try {
+        battleMusic.currentTime = 0; // Reset audio to beginning to prevent overlapping
+        await battleMusic.play();
+      } catch (e) {
+        console.log('Audio play failed:', e);
+      }
+    };
+    playMusic();
+
+    // Cleanup function
+    return () => {
+      if (battleMusic) {
+        battleMusic.pause();
+        battleMusic.currentTime = 0;
+      }
+    };
+  }, []);
 
   const handleSetPlayerIndex = (index: number) => {
     setLocalPlayerIndex(index);
