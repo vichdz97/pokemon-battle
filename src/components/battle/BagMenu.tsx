@@ -66,7 +66,7 @@ export function BagMenu({ items, onUseItem, onBack, disabled = false }: BagMenuP
 
       <GlassButton
         variant="gray"
-        className="w-full"
+        className="w-full bg-tekken-dark/60"
         size="small"
         onClick={onBack}
       >

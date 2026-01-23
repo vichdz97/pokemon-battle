@@ -23,7 +23,7 @@ export function ActionMenu({ onFight, onPokemon, onBag, onRun, disabled = false,
         size="medium"
         onClick={onFight}
         disabled={disabled}
-        className="w-full"
+        className="w-full bg-gradient-to-br from-tekken-dark/60 to-primary-blue/50"
       >
         Fight
       </GlassButton>
@@ -33,7 +33,7 @@ export function ActionMenu({ onFight, onPokemon, onBag, onRun, disabled = false,
         size="medium"
         onClick={onPokemon}
         disabled={disabled || !canSwitch}
-        className="w-full"
+        className="w-full bg-gradient-to-br from-tekken-dark/60 to-primary-red/50"
       >
         Pokémon
       </GlassButton>
@@ -43,7 +43,7 @@ export function ActionMenu({ onFight, onPokemon, onBag, onRun, disabled = false,
         size="medium"
         onClick={onBag}
         disabled={disabled}
-        className="w-full"
+        className="w-full bg-gradient-to-br from-tekken-dark/60 to-yellow-500/50"
       >
         Bag
       </GlassButton>
@@ -53,7 +53,7 @@ export function ActionMenu({ onFight, onPokemon, onBag, onRun, disabled = false,
         size="medium"
         onClick={onRun}
         disabled={disabled}
-        className="w-full"
+        className="w-full bg-gradient-to-br from-tekken-dark/60 to-gray-500/50"
       >
         Run
       </GlassButton>
