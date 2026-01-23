@@ -184,6 +184,13 @@ export function BattleScreen() {
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative overflow-hidden">
+      {/* BACKGROUND IMAGE */}
+      <div className="absolute md:hidden -translate-y-30">
+        <img src="/src/assets/bg-mobile.png" alt="Desktop Background" className="h-screen object-cover" />
+      </div>
+      <div className="absolute hidden md:block">
+        <img src="/src/assets/bg.jpeg" alt="Mobile Background" className="h-screen object-cover" />
+      </div>
       {/* ===== ARENA SECTION ===== */}
       <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">
         {/* CPU Pokemon - upper right */}
