@@ -48,7 +48,7 @@ export function PokemonSprite({
             <motion.img
               src={spriteUrl}
               alt={pokemon.name}
-              className="w-70 h-70 object-contain translate-y-20 md:translate-10 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+              className="w-70 h-70 object-contain translate-y-20 md:translate-x-30 md:-translate-y-5 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]"
               animate={{
                 x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
                 filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
@@ -62,7 +62,7 @@ export function PokemonSprite({
       {/* Pokemon info box */}
       <motion.div
         className={clsx(
-          "w-80 flex gap-1.5",
+          "z-10 w-80 flex gap-1.5",
           isPlayer ? "flex-col" : "flex-col-reverse"
         )}
         initial={{ x: isPlayer ? -50 : 50, opacity: 0 }}
@@ -129,7 +129,7 @@ export function PokemonSprite({
             <motion.img
               src={spriteUrl}
               alt={pokemon.name}
-              className="w-50 h-50 object-contain md:-translate-x-25 md:translate-y-35"
+              className="w-50 h-50 object-contain md:-translate-x-40 md:translate-y-40"
               animate={{
                 x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
                 filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
