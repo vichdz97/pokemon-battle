@@ -123,14 +123,7 @@ export function SelectionScreen() {
   };
 
   if (loading || isPreparingBattle) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner
-          size="large"
-          message={isPreparingBattle ? "Preparing battle..." : "Loading Pokémon..."}
-        />
-      </div>
-    );
+    return <LoadingSpinner message={isPreparingBattle ? "Preparing battle..." : "Loading Pokémon..."} />;
   }
 
   if (error) {
