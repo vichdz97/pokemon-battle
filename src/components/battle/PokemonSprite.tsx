@@ -41,7 +41,7 @@ export function PokemonSprite({
               scale: isFainted ? 0 : 1,
               opacity: isFainted ? 0 : 1,
               x: isAttacking ? 30 : 0,
-              y: isAttacking ? -20 : 0,
+              y: isAttacking ? -10 : 0,
             }}
             transition={{ duration: 0.3 }}
           >
@@ -122,14 +122,14 @@ export function PokemonSprite({
               scale: isFainted ? 0 : 1,
               opacity: isFainted ? 0 : 1,
               x: isAttacking ? -30 : 0,
-              y: isAttacking ? 20 : 0,
+              y: isAttacking ? 10 : 0,
             }}
             transition={{ duration: 0.3 }}
           >
             <motion.img
               src={spriteUrl}
               alt={pokemon.name}
-              className="w-50 h-50 object-contain md:-translate-x-40 md:translate-y-40"
+              className="w-50 h-50 object-contain md:-translate-x-45 md:translate-y-44"
               animate={{
                 x: isTakingDamage ? [0, -5, 5, -5, 5, 0] : 0,
                 filter: isTakingDamage ? ['brightness(1)', 'brightness(2)', 'brightness(0.5)', 'brightness(1)'] : 'brightness(1)',
