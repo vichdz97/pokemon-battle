@@ -223,7 +223,7 @@ export function BattleScreen() {
         <AnimatePresence>
           {showMessage && (
             <motion.div
-              className="absolute bottom-2 left-2 right-2 md:bottom-20 md:left-0 md:right-0 md:px-6 z-10"
+              className="absolute bottom-2 left-2 right-2 md:bottom-20 md:left-0 md:right-0 md:px-6 z-20"
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 30, opacity: 0 }}
@@ -241,7 +241,7 @@ export function BattleScreen() {
 
       {/* ===== ACTION SECTION ===== */}
       {!battleEnded && (
-        <div className="h-[34vh] md:h-auto md:absolute md:bottom-4 md:right-4 z-20 border-t border-white/10 md:border-0 bg-tekken-dark/90 md:bg-transparent backdrop-blur-md md:backdrop-blur-none p-3 md:p-0 flex items-center justify-center">
+        <div className="h-[34vh] md:h-auto md:absolute md:bottom-4 md:right-4 z-10 border-t border-white/10 md:border-0 bg-tekken-dark/90 md:bg-transparent backdrop-blur-md md:backdrop-blur-none p-3 md:p-0 flex items-center justify-center">
           <AnimatePresence mode="wait">
             <motion.div
               key={showForcedSwitch ? 'forced-switch' : menuState}
