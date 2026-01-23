@@ -62,3 +62,56 @@ export const selectCpuMove = (cpu: BattlePokemon): BattleMove | null => {
   
   return movesWithPower[Math.floor(Math.random() * movesWithPower.length)];
 };
+
+/**
+ * Determines if the CPU should switch its active Pokémon.
+ * CPU switches when HP is below 20% and there are healthier alternatives.
+ */
+export const shouldCpuSwitch = (
+  activeCpu: BattlePokemon,
+  cpuTeam: BattlePokemon[],
+  activeIndex: number
+): boolean => {
+  const hpPercent = (activeCpu.currentHp / activeCpu.maxHp) * 100;
+  
+  // Only consider switching if HP is below 20%
+  if (hpPercent > 20) return false;
+
+  // Check if there are healthier alternatives
+  const hasHealthierAlternative = cpuTeam.some((p, i) => {
+    if (i === activeIndex) return false;
+    if (p.currentHp <= 0) return false;
+    const altHpPercent = (p.currentHp / p.maxHp) * 100;
+    return altHpPercent > 40;
+  });
+
+  if (!hasHealthierAlternative) return false;
+
+  // 80% chance to actually switch (adds unpredictability)
+  return Math.random() < 0.8;
+};
+
+/**
+ * Selects the best Pokémon for the CPU to switch to.
+ * Prefers Pokémon with highest HP percentage.
+ */
+export const selectCpuSwitchTarget = (
+  cpuTeam: BattlePokemon[],
+  activeIndex: number
+): number => {
+  let bestIndex = -1;
+  let bestHpPercent = 0;
+
+  cpuTeam.forEach((p, i) => {
+    if (i === activeIndex) return;
+    if (p.currentHp <= 0) return;
+    
+    const hpPercent = (p.currentHp / p.maxHp) * 100;
+    if (hpPercent > bestHpPercent) {
+      bestHpPercent = hpPercent;
+      bestIndex = i;
+    }
+  });
+
+  return bestIndex;
+};

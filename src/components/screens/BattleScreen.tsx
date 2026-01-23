@@ -6,29 +6,45 @@ import { PokemonSprite } from '../battle/PokemonSprite';
 import { ActionMenu } from '../battle/ActionMenu';
 import { MoveSelector } from '../battle/MoveSelector';
 import { BagMenu } from '../battle/BagMenu';
+import { PokemonSwitchMenu } from '../battle/PokemonSwitchMenu';
 import { useBattle } from '../../hooks/useBattle';
 import { GlassButton } from '../common/GlassButton';
 import { BattleMove, BattlePokemon } from '../../types/pokemon';
 import { Item } from '../../types/items';
 import { getRandomMoves } from '../../services/pokeApi';
 
-type MenuState = 'action' | 'moves' | 'bag';
+type MenuState = 'action' | 'moves' | 'bag' | 'pokemon';
 
 export function BattleScreen() {
   const navigate = useNavigate();
-  const { gameState, useItem, resetInventory } = useGame();
+  const { gameState, useItem, resetInventory, setPlayerTeam, setCpuTeam, setActivePlayerIndex, setActiveCpuIndex } = useGame();
   const [menuState, setMenuState] = useState<MenuState>('action');
-  const [localPlayer, setLocalPlayer] = useState<BattlePokemon | null>(gameState.playerPokemon);
-  const [localCpu, setLocalCpu] = useState<BattlePokemon | null>(gameState.cpuPokemon);
+  const [localPlayerTeam, setLocalPlayerTeam] = useState<BattlePokemon[]>(gameState.playerTeam);
+  const [localCpuTeam, setLocalCpuTeam] = useState<BattlePokemon[]>(gameState.cpuTeam);
+  const [localPlayerIndex, setLocalPlayerIndex] = useState(gameState.activePlayerIndex);
+  const [localCpuIndex, setLocalCpuIndex] = useState(gameState.activeCpuIndex);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
-    if (!gameState.playerPokemon || !gameState.cpuPokemon) {
+    if (gameState.playerTeam.length === 0 || gameState.cpuTeam.length === 0) {
       navigate('/selection');
-    } else {
-      setLocalPlayer({ ...gameState.playerPokemon });
-      setLocalCpu({ ...gameState.cpuPokemon });
+    } else if (!isResetting) {
+      setLocalPlayerTeam([...gameState.playerTeam]);
+      setLocalCpuTeam([...gameState.cpuTeam]);
+      setLocalPlayerIndex(gameState.activePlayerIndex);
+      setLocalCpuIndex(gameState.activeCpuIndex);
     }
-  }, [gameState.playerPokemon, gameState.cpuPokemon, navigate]);
+  }, [gameState.playerTeam, gameState.cpuTeam, gameState.activePlayerIndex, gameState.activeCpuIndex, navigate, isResetting]);
+
+  const handleSetPlayerIndex = (index: number) => {
+    setLocalPlayerIndex(index);
+    setActivePlayerIndex(index);
+  };
+
+  const handleSetCpuIndex = (index: number) => {
+    setLocalCpuIndex(index);
+    setActiveCpuIndex(index);
+  };
 
   const {
     currentMessage,
@@ -40,13 +56,27 @@ export function BattleScreen() {
     battleEnded,
     winner,
     isProcessing,
+    forcedSwitch,
     executeTurn,
+    executePlayerSwitch,
     useItemAndEndTurn,
     handleRun,
     resetBattle
-  } = useBattle(localPlayer, localCpu);
+  } = useBattle(
+    localPlayerTeam,
+    localCpuTeam,
+    localPlayerIndex,
+    localCpuIndex,
+    handleSetPlayerIndex,
+    handleSetCpuIndex
+  );
 
-  if (!localPlayer || !localCpu) return null;
+  const activePlayer = localPlayerTeam[localPlayerIndex];
+  const activeCpu = localCpuTeam[localCpuIndex];
+
+  if (!activePlayer || !activeCpu) return null;
+
+  const canSwitch = localPlayerTeam.some((p, i) => i !== localPlayerIndex && p.currentHp > 0);
 
   const handleMoveSelect = (move: BattleMove) => {
     if (move.currentPp > 0 && !isProcessing) {
@@ -56,55 +86,89 @@ export function BattleScreen() {
     }
   };
 
+  const handleSwitchPokemon = (index: number) => {
+    if (!isProcessing || forcedSwitch === 'player') {
+      executePlayerSwitch(index);
+      setMenuState('action');
+    }
+  };
+
   const handleUseItem = (item: Item) => {
     if (isProcessing) return;
 
     if (item.type === 'healing') {
       const healAmount = item.effect?.heal || 0;
-      const actualHeal = Math.min(healAmount, localPlayer.maxHp - localPlayer.currentHp);
+      const actualHeal = Math.min(healAmount, activePlayer.maxHp - activePlayer.currentHp);
 
       if (actualHeal > 0) {
-        setLocalPlayer(prev => prev ? { ...prev, currentHp: Math.min(prev.maxHp, prev.currentHp + healAmount) } : null);
+        setLocalPlayerTeam(prev => {
+          const updated = [...prev];
+          updated[localPlayerIndex] = {
+            ...updated[localPlayerIndex],
+            currentHp: Math.min(updated[localPlayerIndex].maxHp, updated[localPlayerIndex].currentHp + healAmount)
+          };
+          return updated;
+        });
         useItem(item.id);
         useItemAndEndTurn(item.name, actualHeal);
         setMenuState('action');
       }
-    } else if (item.type === 'revive' && localPlayer.currentHp <= 0) {
-      const reviveAmount = Math.floor(localPlayer.maxHp / 2);
-      setLocalPlayer(prev => prev ? { ...prev, currentHp: reviveAmount } : null);
-      useItem(item.id);
-      setMenuState('action');
+    } else if (item.type === 'revive') {
+      // Find first fainted Pokemon in team
+      const faintedIndex = localPlayerTeam.findIndex((p, i) => i !== localPlayerIndex && p.currentHp <= 0);
+      if (faintedIndex >= 0) {
+        const reviveAmount = item.id === 'max-revive'
+          ? localPlayerTeam[faintedIndex].maxHp
+          : Math.floor(localPlayerTeam[faintedIndex].maxHp / 2);
+        setLocalPlayerTeam(prev => {
+          const updated = [...prev];
+          updated[faintedIndex] = { ...updated[faintedIndex], currentHp: reviveAmount };
+          return updated;
+        });
+        useItem(item.id);
+        useItemAndEndTurn(item.name, reviveAmount);
+        setMenuState('action');
+      }
     }
   };
 
   const handleRematch = async () => {
-    if (!gameState.playerPokemon || !gameState.cpuPokemon) return;
+    if (gameState.playerTeam.length === 0 || gameState.cpuTeam.length === 0) return;
+
+    setIsResetting(true);
+
     try {
-      const [playerMoves, cpuMoves] = await Promise.all([
-        getRandomMoves(gameState.playerPokemon),
-        getRandomMoves(gameState.cpuPokemon)
+      const [freshPlayerTeam, freshCpuTeam] = await Promise.all([
+        Promise.all(gameState.playerTeam.map(async (p) => {
+          const moves = await getRandomMoves(p);
+          return { ...p, currentHp: p.maxHp, selectedMoves: moves };
+        })),
+        Promise.all(gameState.cpuTeam.map(async (p) => {
+          const moves = await getRandomMoves(p);
+          return { ...p, currentHp: p.maxHp, selectedMoves: moves };
+        }))
       ]);
 
-      const freshPlayer: BattlePokemon = {
-        ...gameState.playerPokemon,
-        currentHp: gameState.playerPokemon.maxHp,
-        selectedMoves: playerMoves
-      };
-
-      const freshCpu: BattlePokemon = {
-        ...gameState.cpuPokemon,
-        currentHp: gameState.cpuPokemon.maxHp,
-        selectedMoves: cpuMoves
-      };
-
-      setLocalPlayer(freshPlayer);
-      setLocalCpu(freshCpu);
+      setLocalPlayerTeam(freshPlayerTeam);
+      setLocalCpuTeam(freshCpuTeam);
+      setLocalPlayerIndex(0);
+      setLocalCpuIndex(0);
+      setPlayerTeam(freshPlayerTeam);
+      setCpuTeam(freshCpuTeam);
+      setActivePlayerIndex(0);
+      setActiveCpuIndex(0);
       resetInventory();
       resetBattle();
       setMenuState('action');
     } catch (error) {
       console.error('Failed to reset battle:', error);
+    } finally {
+      setIsResetting(false);
     }
+  };
+
+  const handleChangePokemon = () => {
+    navigate('/selection');
   };
 
   const getFinalMessage = () => {
@@ -115,29 +179,36 @@ export function BattleScreen() {
     }
   };
 
+  // Determine if we should show the forced switch menu
+  const showForcedSwitch = forcedSwitch === 'player' && !battleEnded;
+
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent relative overflow-hidden">
-      {/* ===== ARENA SECTION (top 2/3 on mobile, flex-1 on desktop) ===== */}
+      {/* ===== ARENA SECTION ===== */}
       <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">
         {/* CPU Pokemon - upper right */}
         <div className="absolute top-4 right-4 md:top-8 md:right-8 scale-75 md:scale-100 origin-top-right">
           <PokemonSprite
-            pokemon={localCpu}
+            pokemon={activeCpu}
             isPlayer={false}
             isAttacking={cpuAttacking}
             isTakingDamage={cpuDamaged}
-            isFainted={localCpu.currentHp <= 0}
+            isFainted={activeCpu.currentHp <= 0}
+            team={localCpuTeam}
+            activeIndex={localCpuIndex}
           />
         </div>
 
         {/* Player Pokemon - bottom left of arena */}
         <div className="absolute bottom-4 left-4 md:bottom-32 md:left-8 scale-75 md:scale-100 origin-bottom-left">
           <PokemonSprite
-            pokemon={localPlayer}
+            pokemon={activePlayer}
             isPlayer={true}
             isAttacking={playerAttacking}
             isTakingDamage={playerDamaged}
-            isFainted={localPlayer.currentHp <= 0}
+            isFainted={activePlayer.currentHp <= 0}
+            team={localPlayerTeam}
+            activeIndex={localPlayerIndex}
           />
         </div>
 
@@ -161,33 +232,56 @@ export function BattleScreen() {
         </AnimatePresence>
       </div>
 
-      {/* ===== ACTION SECTION (bottom 1/3 on mobile) ===== */}
+      {/* ===== ACTION SECTION ===== */}
       {!battleEnded && (
         <div className="h-[34vh] md:h-auto md:absolute md:bottom-4 md:right-4 z-20 border-t border-white/10 md:border-0 bg-tekken-dark/90 md:bg-transparent backdrop-blur-md md:backdrop-blur-none p-3 md:p-0 flex items-center justify-center">
           <AnimatePresence mode="wait">
             <motion.div
-              key={menuState}
+              key={showForcedSwitch ? 'forced-switch' : menuState}
               className="w-full h-full max-w-md md:max-w-none md:w-auto"
             >
-              {menuState === 'action' && (
-                <ActionMenu
-                  onFight={() => setMenuState('moves')}
-                  onBag={() => setMenuState('bag')}
-                  onRun={() => handleRun(localPlayer, localCpu)}
-                  disabled={isProcessing}
+              {showForcedSwitch && (
+                <PokemonSwitchMenu
+                  team={localPlayerTeam}
+                  activeIndex={localPlayerIndex}
+                  onSwitch={handleSwitchPokemon}
+                  onBack={() => {}}
+                  disabled={false}
+                  forcedSwitch={true}
                 />
               )}
 
-              {menuState === 'moves' && (
+              {!showForcedSwitch && menuState === 'action' && (
+                <ActionMenu
+                  onFight={() => setMenuState('moves')}
+                  onPokemon={() => setMenuState('pokemon')}
+                  onBag={() => setMenuState('bag')}
+                  onRun={handleRun}
+                  disabled={isProcessing}
+                  canSwitch={canSwitch}
+                />
+              )}
+
+              {!showForcedSwitch && menuState === 'moves' && (
                 <MoveSelector
-                  moves={localPlayer.selectedMoves}
+                  moves={activePlayer.selectedMoves}
                   onSelectMove={handleMoveSelect}
                   onBack={() => setMenuState('action')}
                   disabled={isProcessing}
                 />
               )}
 
-              {menuState === 'bag' && (
+              {!showForcedSwitch && menuState === 'pokemon' && (
+                <PokemonSwitchMenu
+                  team={localPlayerTeam}
+                  activeIndex={localPlayerIndex}
+                  onSwitch={handleSwitchPokemon}
+                  onBack={() => setMenuState('action')}
+                  disabled={isProcessing}
+                />
+              )}
+
+              {!showForcedSwitch && menuState === 'bag' && (
                 <BagMenu
                   items={gameState.inventory}
                   onUseItem={handleUseItem}
@@ -218,15 +312,16 @@ export function BattleScreen() {
                 size="medium"
                 className="w-full"
                 onClick={handleRematch}
+                disabled={isResetting}
               >
-                Rematch
+                {isResetting ? 'Preparing...' : 'Rematch'}
               </GlassButton>
 
               <GlassButton
                 variant="red"
                 size="medium"
                 className="w-full"
-                onClick={() => navigate('/selection')}
+                onClick={handleChangePokemon}
               >
                 Change Pokémon
               </GlassButton>

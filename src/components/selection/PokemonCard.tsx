@@ -8,6 +8,7 @@ interface PokemonCardProps {
   isPlayer: boolean;
   isSelected: boolean;
   isDisabled: boolean;
+  selectionOrder?: number | null;
   onSelect: () => void;
   onHover: (pokemon: Pokemon | null) => void;
 }
@@ -17,6 +18,7 @@ export function PokemonCard({
   isPlayer,
   isSelected,
   isDisabled,
+  selectionOrder = null,
   onSelect,
   onHover
 }: PokemonCardProps) {
@@ -28,8 +30,8 @@ export function PokemonCard({
       className={clsx(
         'relative flex items-center justify-center p-1.5 md:p-2 rounded-lg border-2 transition-all duration-200 overflow-hidden',
         'bg-gradient-to-br from-tekken-panel to-tekken-dark',
-        isSelected && 'ring-2 ring-primary-blue border-primary-blue',
-        isDisabled && 'opacity-40 cursor-not-allowed',
+        isSelected && (isPlayer ? 'ring-2 ring-primary-blue border-primary-blue' : 'ring-2 ring-primary-red border-primary-red'),
+        isDisabled && !isSelected && 'opacity-40 cursor-not-allowed',
         !isDisabled && !isSelected && 'hover:border-white/30'
       )}
       style={{
@@ -39,10 +41,28 @@ export function PokemonCard({
       onMouseEnter={() => onHover(pokemon)}
       onMouseLeave={() => onHover(null)}
       onTouchStart={() => onHover(pokemon)}
-      disabled={isDisabled}
-      whileHover={!isDisabled ? { scale: 1.05 } : {}}
-      whileTap={!isDisabled ? { scale: 0.95 } : {}}
+      disabled={isDisabled && !isSelected}
+      whileHover={!isDisabled || isSelected ? { scale: 1.05 } : {}}
+      whileTap={!isDisabled || isSelected ? { scale: 0.95 } : {}}
     >
+      {/* Selection order badge */}
+      {selectionOrder !== null && (
+        <motion.div
+          className={clsx(
+            'absolute -top-0.5 -right-0.5 z-10',
+            'w-4 h-4 md:w-5 md:h-5 rounded-full',
+            'flex items-center justify-center',
+            'font-orbitron text-[8px] md:text-[10px] font-bold text-white',
+            isPlayer ? 'bg-primary-blue' : 'bg-primary-red'
+          )}
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+        >
+          {selectionOrder}
+        </motion.div>
+      )}
+
       {/* Pokemon sprite */}
       <img
         src={pokemon.sprites.other.home.front_default}

@@ -6,54 +6,82 @@ import { usePokemonData } from '../../hooks/usePokemonData';
 import { PokemonCard } from '../selection/PokemonCard';
 import { CharacterDisplay } from '../selection/CharacterDisplay';
 import { StatsPanel } from '../selection/StatsPanel';
+import { TeamRoster } from '../selection/TeamRoster';
 import { GlassButton } from '../common/GlassButton';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pokemon, BattlePokemon } from '../../types/pokemon';
 import { getRandomMoves } from '../../services/pokeApi';
 
+const MAX_TEAM_SIZE = 6;
+
 type MobileStep = 'player' | 'cpu' | 'confirm';
 
 export function SelectionScreen() {
   const navigate = useNavigate();
-  const { setPlayerPokemon, setCpuPokemon } = useGame();
+  const { setPlayerTeam, setCpuTeam } = useGame();
   const { pokemon, loading, error } = usePokemonData();
 
-  const [selectedPlayer, setSelectedPlayer] = useState<Pokemon | null>(null);
-  const [selectedCpu, setSelectedCpu] = useState<Pokemon | null>(null);
+  const [playerTeamSelection, setPlayerTeamSelection] = useState<Pokemon[]>([]);
+  const [cpuTeamSelection, setCpuTeamSelection] = useState<Pokemon[]>([]);
   const [hoveredPlayerPokemon, setHoveredPlayerPokemon] = useState<Pokemon | null>(null);
   const [hoveredCPUPokemon, setHoveredCPUPokemon] = useState<Pokemon | null>(null);
   const [isPreparingBattle, setIsPreparingBattle] = useState(false);
   const [mobileStep, setMobileStep] = useState<MobileStep>('player');
 
   const handleSelectPlayer = (poke: Pokemon) => {
-    if (selectedPlayer?.id === poke.id) {
-      setSelectedPlayer(null);
-    } else {
-      setSelectedPlayer(poke);
+    const existingIndex = playerTeamSelection.findIndex(p => p.id === poke.id);
+    if (existingIndex >= 0) {
+      setPlayerTeamSelection(prev => prev.filter((_, i) => i !== existingIndex));
+    } else if (playerTeamSelection.length < MAX_TEAM_SIZE) {
+      setPlayerTeamSelection(prev => [...prev, poke]);
     }
   };
 
   const handleSelectCpu = (poke: Pokemon) => {
-    if (selectedCpu?.id === poke.id) {
-      setSelectedCpu(null);
-    } else {
-      setSelectedCpu(poke);
+    const existingIndex = cpuTeamSelection.findIndex(p => p.id === poke.id);
+    if (existingIndex >= 0) {
+      setCpuTeamSelection(prev => prev.filter((_, i) => i !== existingIndex));
+    } else if (cpuTeamSelection.length < MAX_TEAM_SIZE) {
+      setCpuTeamSelection(prev => [...prev, poke]);
     }
   };
 
-  const chooseRandomPokemon = (isPlayer: boolean) => {
-    const randomIndex = Math.floor(Math.random() * pokemon.length);
-    isPlayer ? setSelectedPlayer(pokemon[randomIndex]) : setSelectedCpu(pokemon[randomIndex]);
+  const handleRemovePlayerPokemon = (index: number) => {
+    setPlayerTeamSelection(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveCpuPokemon = (index: number) => {
+    setCpuTeamSelection(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getPlayerSelectionOrder = (poke: Pokemon): number | null => {
+    const index = playerTeamSelection.findIndex(p => p.id === poke.id);
+    return index >= 0 ? index + 1 : null;
+  };
+
+  const getCpuSelectionOrder = (poke: Pokemon): number | null => {
+    const index = cpuTeamSelection.findIndex(p => p.id === poke.id);
+    return index >= 0 ? index + 1 : null;
+  };
+
+  const chooseRandomTeam = (isPlayer: boolean) => {
+    const shuffled = [...pokemon].sort(() => Math.random() - 0.5);
+    const team = shuffled.slice(0, MAX_TEAM_SIZE);
+    if (isPlayer) {
+      setPlayerTeamSelection(team);
+    } else {
+      setCpuTeamSelection(team);
+    }
   };
 
   const handleMobilePlayerConfirm = () => {
-    if (selectedPlayer) {
+    if (playerTeamSelection.length > 0) {
       setMobileStep('cpu');
     }
   };
 
   const handleMobileCpuConfirm = () => {
-    if (selectedCpu) {
+    if (cpuTeamSelection.length > 0) {
       setMobileStep('confirm');
     }
   };
@@ -62,35 +90,30 @@ export function SelectionScreen() {
     setMobileStep(target);
   };
 
+  const prepareBattlePokemon = async (poke: Pokemon): Promise<BattlePokemon> => {
+    const moves = await getRandomMoves(poke);
+    return {
+      ...poke,
+      currentHp: poke.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
+      maxHp: poke.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
+      level: 50,
+      selectedMoves: moves,
+    };
+  };
+
   const handleStartBattle = async () => {
-    if (!selectedPlayer || !selectedCpu) return;
+    if (playerTeamSelection.length === 0 || cpuTeamSelection.length === 0) return;
 
     setIsPreparingBattle(true);
 
     try {
-      const [playerMoves, cpuMoves] = await Promise.all([
-        getRandomMoves(selectedPlayer),
-        getRandomMoves(selectedCpu),
+      const [playerBattleTeam, cpuBattleTeam] = await Promise.all([
+        Promise.all(playerTeamSelection.map(prepareBattlePokemon)),
+        Promise.all(cpuTeamSelection.map(prepareBattlePokemon)),
       ]);
 
-      const playerBattlePokemon: BattlePokemon = {
-        ...selectedPlayer,
-        currentHp: selectedPlayer.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-        maxHp: selectedPlayer.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-        level: 50,
-        selectedMoves: playerMoves,
-      };
-
-      const cpuBattlePokemon: BattlePokemon = {
-        ...selectedCpu,
-        currentHp: selectedCpu.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-        maxHp: selectedCpu.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-        level: 50,
-        selectedMoves: cpuMoves,
-      };
-
-      setPlayerPokemon(playerBattlePokemon);
-      setCpuPokemon(cpuBattlePokemon);
+      setPlayerTeam(playerBattleTeam);
+      setCpuTeam(cpuBattleTeam);
 
       navigate('/battle');
     } catch (error) {
@@ -124,56 +147,77 @@ export function SelectionScreen() {
     );
   }
 
+  const lastSelectedPlayer = playerTeamSelection.length > 0 ? playerTeamSelection[playerTeamSelection.length - 1] : null;
+  const lastSelectedCpu = cpuTeamSelection.length > 0 ? cpuTeamSelection[cpuTeamSelection.length - 1] : null;
+
   return (
     <div className="min-h-screen p-4 md:p-6 bg-gradient-to-br from-tekken-dark via-tekken-panel to-tekken-accent">
       <h1 className="opacity-0 md:opacity-10 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-orbitron text-6xl md:text-9xl font-bold pointer-events-none">VS</h1>
 
       {/* Desktop Layout */}
       <div className="hidden md:block max-w-7xl mx-auto">
-        <div className="grid grid-cols-2 grid-rows-2 gap-4">
+        <div className="grid grid-cols-2  gap-4">
           {/* Player's Pokémon display */}
           <div className="flex flex-col gap-4">
-            <h2 className="font-orbitron text-lg text-primary-blue uppercase">Your Pokémon</h2>
+            <h2 className="font-orbitron text-lg text-primary-blue uppercase">Your Team</h2>
             <div className="flex items-center justify-center">
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.3 }}
               >
-                <StatsPanel pokemon={selectedPlayer || hoveredPlayerPokemon} />
+                <StatsPanel pokemon={lastSelectedPlayer || hoveredPlayerPokemon} />
               </motion.div>
               <div className="flex-1">
-                <CharacterDisplay pokemon={selectedPlayer || hoveredPlayerPokemon} side="player" />
+                <CharacterDisplay pokemon={lastSelectedPlayer || hoveredPlayerPokemon} side="player" />
               </div>
+            </div>
+            {/* Team Roster */}
+            <div className="self-center">
+              <TeamRoster
+                team={playerTeamSelection}
+                maxSize={MAX_TEAM_SIZE}
+                side="player"
+                onRemove={handleRemovePlayerPokemon}
+              />
             </div>
           </div>
 
           {/* CPU's Pokémon display */}
           <div className="flex flex-col gap-4">
-            <h2 className="self-end font-orbitron text-lg text-primary-red uppercase">Opponent's Pokémon</h2>
+            <h2 className="self-end font-orbitron text-lg text-primary-red uppercase">Opponent's Team</h2>
             <div className="flex items-center justify-center">
               <div className="flex-1">
-                <CharacterDisplay pokemon={selectedCpu || hoveredCPUPokemon} side="cpu" />
+                <CharacterDisplay pokemon={lastSelectedCpu || hoveredCPUPokemon} side="cpu" />
               </div>
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.3 }}
               >
-                <StatsPanel pokemon={selectedCpu || hoveredCPUPokemon} />
+                <StatsPanel pokemon={lastSelectedCpu || hoveredCPUPokemon} />
               </motion.div>
+            </div>
+            {/* Team Roster */}
+            <div className="self-center">
+              <TeamRoster
+                team={cpuTeamSelection}
+                maxSize={MAX_TEAM_SIZE}
+                side="cpu"
+                onRemove={handleRemoveCpuPokemon}
+              />
             </div>
           </div>
 
-          {/* Player selection */}
+          {/* Player selection grid */}
           <motion.div
             className="flex flex-col items-center gap-4"
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
           >
-            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(true)}>
-              Random
+            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomTeam(true)}>
+              Random Team
             </GlassButton>
             <div className="grid grid-cols-8 gap-2 overflow-y-auto scrollbar-thin p-2">
               {pokemon.map((poke) => (
@@ -181,8 +225,9 @@ export function SelectionScreen() {
                   key={poke.id}
                   pokemon={poke}
                   isPlayer={true}
-                  isSelected={selectedPlayer?.id === poke.id}
-                  isDisabled={false}
+                  isSelected={playerTeamSelection.some(p => p.id === poke.id)}
+                  isDisabled={playerTeamSelection.length >= MAX_TEAM_SIZE && !playerTeamSelection.some(p => p.id === poke.id)}
+                  selectionOrder={getPlayerSelectionOrder(poke)}
                   onSelect={() => handleSelectPlayer(poke)}
                   onHover={setHoveredPlayerPokemon}
                 />
@@ -190,15 +235,15 @@ export function SelectionScreen() {
             </div>
           </motion.div>
 
-          {/* CPU selection */}
+          {/* CPU selection grid */}
           <motion.div
             className="flex flex-col items-center gap-4"
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
           >
-            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(false)}>
-              Random
+            <GlassButton variant="yellow" size="small" onClick={() => chooseRandomTeam(false)}>
+              Random Team
             </GlassButton>
             <div className="grid grid-cols-8 gap-2 overflow-y-auto scrollbar-thin p-2">
               {pokemon.map((poke) => (
@@ -206,8 +251,9 @@ export function SelectionScreen() {
                   key={poke.id}
                   pokemon={poke}
                   isPlayer={false}
-                  isSelected={selectedCpu?.id === poke.id}
-                  isDisabled={false}
+                  isSelected={cpuTeamSelection.some(p => p.id === poke.id)}
+                  isDisabled={cpuTeamSelection.length >= MAX_TEAM_SIZE && !cpuTeamSelection.some(p => p.id === poke.id)}
+                  selectionOrder={getCpuSelectionOrder(poke)}
                   onSelect={() => handleSelectCpu(poke)}
                   onHover={setHoveredCPUPokemon}
                 />
@@ -218,7 +264,7 @@ export function SelectionScreen() {
 
         {/* Battle button */}
         <motion.div
-          className="flex justify-center mt-8 gap-4"
+          className="flex justify-center mt-4 gap-4"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.4 }}
@@ -230,7 +276,7 @@ export function SelectionScreen() {
             variant="red"
             size="large"
             onClick={handleStartBattle}
-            disabled={!selectedPlayer || !selectedCpu}
+            disabled={playerTeamSelection.length === 0 || cpuTeamSelection.length === 0}
           >
             Start Battle!
           </GlassButton>
@@ -244,37 +290,44 @@ export function SelectionScreen() {
           {mobileStep === 'player' && (
             <motion.div
               key="player-step"
-              className="flex flex-col gap-6 h-full"
+              className="flex flex-col gap-4 h-full"
               initial={{ x: 300, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -300, opacity: 0 }}
               transition={{ duration: 0.4, ease: 'easeInOut' }}
             >
               <h2 className="font-orbitron text-base text-primary-blue uppercase text-center">
-                Choose Your Pokémon
+                Build Your Team
               </h2>
 
-              {/* Player Character Display */}
+              {/* Character Display */}
               <div className="flex items-center justify-center">
-                {/* Stats Panel (compact) */}
-                {(selectedPlayer) && (
-                  <motion.div
-                    className="flex-1"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                  >
-                    <StatsPanel pokemon={selectedPlayer} />
-                  </motion.div>
-                )}
+                <motion.div
+                  className="flex-1"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                >
+                  <StatsPanel pokemon={lastSelectedPlayer} />
+                </motion.div>
                 <div className="flex-2">
-                  <CharacterDisplay pokemon={selectedPlayer} side="player" />
+                  <CharacterDisplay pokemon={lastSelectedPlayer} side="player" />
                 </div>
               </div>
 
+              {/* Team Roster */}
+              <div className="self-center">
+                <TeamRoster
+                  team={playerTeamSelection}
+                  maxSize={MAX_TEAM_SIZE}
+                  side="player"
+                  onRemove={handleRemovePlayerPokemon}
+                />
+              </div>
+
               {/* Pokemon Grid */}
-              <div className="flex flex-col items-center justify-center gap-4 overflow-y-auto">
-                <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(true)}>
-                  Random
+              <div className="flex flex-col items-center justify-center gap-3 overflow-y-auto flex-1">
+                <GlassButton variant="yellow" size="small" onClick={() => chooseRandomTeam(true)}>
+                  Random Team
                 </GlassButton>
                 <div className="grid grid-cols-4 gap-2">
                   {pokemon.map((poke) => (
@@ -282,8 +335,9 @@ export function SelectionScreen() {
                       key={poke.id}
                       pokemon={poke}
                       isPlayer={true}
-                      isSelected={selectedPlayer?.id === poke.id}
-                      isDisabled={false}
+                      isSelected={playerTeamSelection.some(p => p.id === poke.id)}
+                      isDisabled={playerTeamSelection.length >= MAX_TEAM_SIZE && !playerTeamSelection.some(p => p.id === poke.id)}
+                      selectionOrder={getPlayerSelectionOrder(poke)}
                       onSelect={() => handleSelectPlayer(poke)}
                       onHover={setHoveredPlayerPokemon}
                     />
@@ -301,7 +355,7 @@ export function SelectionScreen() {
                   size="medium"
                   className="flex-1"
                   onClick={handleMobilePlayerConfirm}
-                  disabled={!selectedPlayer}
+                  disabled={playerTeamSelection.length === 0}
                 >
                   Next →
                 </GlassButton>
@@ -313,38 +367,44 @@ export function SelectionScreen() {
           {mobileStep === 'cpu' && (
             <motion.div
               key="cpu-step"
-              className="flex flex-col gap-6 h-full"
+              className="flex flex-col gap-4 h-full"
               initial={{ x: 300, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -300, opacity: 0 }}
               transition={{ duration: 0.4, ease: 'easeInOut' }}
             >
               <h2 className="font-orbitron text-base text-primary-red uppercase text-center">
-                Choose Opponent's Pokémon
+                Opponent's Team
               </h2>
 
-              {/* CPU Character Display */}
+              {/* Character Display */}
               <div className="flex items-center justify-center">
-                {/* Stats Panel (compact) */}
-                {(selectedCpu) && (
-                  <motion.div
-                    className="flex-1"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                  >
-                    <StatsPanel pokemon={selectedCpu} />
-                  </motion.div>
-                )}
+                <motion.div
+                  className="flex-1"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                >
+                  <StatsPanel pokemon={lastSelectedCpu} />
+                </motion.div>
                 <div className="flex-2">
-                  <CharacterDisplay pokemon={selectedCpu} side="cpu" />
+                  <CharacterDisplay pokemon={lastSelectedCpu} side="cpu" />
                 </div>
               </div>
 
+              {/* Team Roster */}
+              <div className="self-center">
+                <TeamRoster
+                  team={cpuTeamSelection}
+                  maxSize={MAX_TEAM_SIZE}
+                  side="cpu"
+                  onRemove={handleRemoveCpuPokemon}
+                />
+              </div>
 
               {/* Pokemon Grid */}
-              <div className="flex flex-col items-center justify-center gap-4 overflow-y-auto">
-                <GlassButton variant="yellow" size="small" onClick={() => chooseRandomPokemon(false)}>
-                  Random
+              <div className="flex flex-col items-center justify-center gap-3 overflow-y-auto flex-1">
+                <GlassButton variant="yellow" size="small" onClick={() => chooseRandomTeam(false)}>
+                  Random Team
                 </GlassButton>
                 <div className="grid grid-cols-4 gap-2">
                   {pokemon.map((poke) => (
@@ -352,8 +412,9 @@ export function SelectionScreen() {
                       key={poke.id}
                       pokemon={poke}
                       isPlayer={false}
-                      isSelected={selectedCpu?.id === poke.id}
-                      isDisabled={false}
+                      isSelected={cpuTeamSelection.some(p => p.id === poke.id)}
+                      isDisabled={cpuTeamSelection.length >= MAX_TEAM_SIZE && !cpuTeamSelection.some(p => p.id === poke.id)}
+                      selectionOrder={getCpuSelectionOrder(poke)}
                       onSelect={() => handleSelectCpu(poke)}
                       onHover={setHoveredCPUPokemon}
                     />
@@ -371,7 +432,7 @@ export function SelectionScreen() {
                   size="medium"
                   className="flex-1"
                   onClick={handleMobileCpuConfirm}
-                  disabled={!selectedCpu}
+                  disabled={cpuTeamSelection.length === 0}
                 >
                   Confirm
                 </GlassButton>
@@ -379,7 +440,7 @@ export function SelectionScreen() {
             </motion.div>
           )}
 
-          {/* Step 3: Confirmation */}
+          {/* Step 3: Confirmation - Team Roster Preview */}
           {mobileStep === 'confirm' && (
             <motion.div
               key="confirm-step"
@@ -393,88 +454,77 @@ export function SelectionScreen() {
                 Battle Preview
               </h2>
 
-              {/* VS Display */}
-              <div className="relative grid grid-cols-2 gap-10 w-full px-4">
-                {/* Player Pokemon */}
-                <div className="flex flex-col items-center gap-4">
-                  <CharacterDisplay pokemon={selectedPlayer} side="player" />
+              {/* Player Team */}
+              <div className="w-full px-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-orbitron text-sm text-primary-blue uppercase">Your Team</h3>
                   <GlassButton variant="yellow" size="small" onClick={() => handleMobileEdit('player')}>
-                    Change
+                    Edit
                   </GlassButton>
                 </div>
-
-                {/* VS Text */}
-                <div className="absolute top-1/2 left-1/2 -translate-1/2">
-                  <span className="font-orbitron text-3xl font-black text-tekken-gold opacity-80">
-                    VS
-                  </span>
-                </div>
-
-                {/* CPU Pokemon */}
-                <div className="flex flex-col items-center gap-4">
-                  <CharacterDisplay pokemon={selectedCpu} side="cpu" />
-                  <GlassButton variant="yellow" size="small" onClick={() => handleMobileEdit('cpu')}>
-                    Change
-                  </GlassButton>
+                <div className="bg-tekken-panel/80 backdrop-blur-xl border border-primary-blue/20 rounded-lg p-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {playerTeamSelection.map((poke, index) => (
+                      <div key={poke.id} className="w-1/4 flex flex-col items-center gap-1">
+                        <div className="relative">
+                          <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary-blue flex items-center justify-center z-10`}>
+                            <span className="text-[8px] font-bold text-white">{index + 1}</span>
+                          </div>
+                          <img
+                            src={poke.sprites.other.home.front_default || poke.sprites.front_default}
+                            alt={poke.name}
+                            className="w-12 h-12 object-contain"
+                          />
+                        </div>
+                        <span className="font-rajdhani text-[10px] text-gray-300 capitalize truncate w-full text-center">
+                          {poke.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Stats Comparison */}
-              <div className="w-full">
-                <div className="bg-tekken-panel/80 backdrop-blur-xl border border-white/10 rounded-lg p-3">
-                  <h4 className="font-orbitron text-xs text-tekken-gold uppercase text-center mb-2">
-                    Stats Comparison
-                  </h4>
-                  {selectedPlayer && selectedCpu && (
-                    <div className="flex flex-col justify-evenly h-50">
-                      {['hp', 'attack', 'defense', 'special-attack', 'special-defense', 'speed'].map((statName) => {
-                        const playerStat = selectedPlayer.stats.find(s => s.stat.name === statName)?.base_stat || 0;
-                        const cpuStat = selectedCpu.stats.find(s => s.stat.name === statName)?.base_stat || 0;
-                        const statLabel = statName === 'attack' ? 'ATK' :
-                          statName === 'special-attack' ? 'SP.ATK' :
-                          statName === 'special-defense' ? 'SP.DEF' :
-                          statName === 'speed' ? 'SPD' :
-                            statName.toUpperCase().slice(0, 3);
+              {/* VS Divider */}
+              <div className="flex items-center gap-4 w-full px-8">
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary-blue to-transparent" />
+                <span className="font-orbitron text-2xl font-black text-tekken-gold">VS</span>
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-primary-red to-transparent" />
+              </div>
 
-                        return (
-                          <div key={statName} className="flex items-center gap-2">
-                            <span className={`font-orbitron text-[10px] w-8 text-right ${playerStat > cpuStat ? 'text-green-400' : 'text-gray-400' }`}>
-                              {playerStat}
-                            </span>
-                            <div className="flex-1 flex items-center gap-1">
-                              <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden flex justify-end">
-                                <motion.div
-                                  className="h-full bg-primary-blue rounded-full"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${Math.min(100, (playerStat / 200) * 100)}%` }}
-                                  transition={{ duration: 0.5 }}
-                                />
-                              </div>
-                              <span className="font-rajdhani text-[9px] text-gray-500 w-10 text-center">
-                                {statLabel}
-                              </span>
-                              <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden">
-                                <motion.div
-                                  className="h-full bg-primary-red rounded-full"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${Math.min(100, (cpuStat / 200) * 100)}%` }}
-                                  transition={{ duration: 0.5 }}
-                                />
-                              </div>
-                            </div>
-                            <span className={`font-orbitron text-[10px] w-8 ${cpuStat > playerStat ? 'text-green-400' : 'text-gray-400'}`}>
-                              {cpuStat}
-                            </span>
+              {/* CPU Team */}
+              <div className="w-full px-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-orbitron text-sm text-primary-red uppercase">Opponent's Team</h3>
+                  <GlassButton variant="yellow" size="small" onClick={() => handleMobileEdit('cpu')}>
+                    Edit
+                  </GlassButton>
+                </div>
+                <div className="bg-tekken-panel/80 backdrop-blur-xl border border-primary-red/20 rounded-lg p-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {cpuTeamSelection.map((poke, index) => (
+                      <div key={poke.id} className="w-1/4 flex flex-col items-center gap-1">
+                        <div className="relative">
+                          <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary-red flex items-center justify-center z-10`}>
+                            <span className="text-[8px] font-bold text-white">{index + 1}</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          <img
+                            src={poke.sprites.other.home.front_default || poke.sprites.front_default}
+                            alt={poke.name}
+                            className="w-12 h-12 object-contain"
+                          />
+                        </div>
+                        <span className="font-rajdhani text-[10px] text-gray-300 capitalize truncate w-full text-center">
+                          {poke.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 w-full">
+              <div className="flex gap-3 w-full px-4">
                 <GlassButton
                   variant="gray"
                   size="medium"
@@ -484,7 +534,7 @@ export function SelectionScreen() {
                   ← Back
                 </GlassButton>
                 <GlassButton
-                  variant="blue"
+                  variant="red"
                   size="medium"
                   className="flex-1"
                   onClick={handleStartBattle}

@@ -91,3 +91,8 @@ export interface BattlePokemon extends Pokemon {
   selectedMoves: BattleMove[];
   status?: string;
 }
+
+export interface TeamSlot {
+  pokemon: Pokemon;
+  order: number;
+}

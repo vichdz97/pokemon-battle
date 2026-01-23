@@ -3,12 +3,14 @@ import { GlassButton } from '../common/GlassButton';
 
 interface ActionMenuProps {
   onFight: () => void;
+  onPokemon: () => void;
   onBag: () => void;
   onRun: () => void;
   disabled?: boolean;
+  canSwitch?: boolean;
 }
 
-export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMenuProps) {
+export function ActionMenu({ onFight, onPokemon, onBag, onRun, disabled = false, canSwitch = true }: ActionMenuProps) {
   return (
     <motion.div
       className="grid grid-cols-2 gap-2 w-full h-full md:flex md:flex-col md:gap-2 md:w-56"
@@ -17,7 +19,7 @@ export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMe
       transition={{ duration: 0.3 }}
     >
       <GlassButton
-        variant="red"
+        variant="blue"
         size="medium"
         onClick={onFight}
         disabled={disabled}
@@ -27,10 +29,10 @@ export function ActionMenu({ onFight, onBag, onRun, disabled = false }: ActionMe
       </GlassButton>
 
       <GlassButton
-        variant="blue"
+        variant="red"
         size="medium"
-        onClick={() => {}}
-        disabled={disabled}
+        onClick={onPokemon}
+        disabled={disabled || !canSwitch}
         className="w-full"
       >
         Pokémon

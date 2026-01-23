@@ -3,16 +3,20 @@ import { BattlePokemon } from '../types/pokemon';
 import { Item, STARTER_ITEMS } from '../types/items';
 
 interface GameState {
-  playerPokemon: BattlePokemon | null;
-  cpuPokemon: BattlePokemon | null;
+  playerTeam: BattlePokemon[];
+  cpuTeam: BattlePokemon[];
+  activePlayerIndex: number;
+  activeCpuIndex: number;
   inventory: Item[];
   battleHistory: string[];
 }
 
 interface GameContextType {
   gameState: GameState;
-  setPlayerPokemon: (pokemon: BattlePokemon | null) => void;
-  setCpuPokemon: (pokemon: BattlePokemon | null) => void;
+  setPlayerTeam: (team: BattlePokemon[]) => void;
+  setCpuTeam: (team: BattlePokemon[]) => void;
+  setActivePlayerIndex: (index: number) => void;
+  setActiveCpuIndex: (index: number) => void;
   updateInventory: (items: Item[]) => void;
   useItem: (itemId: string) => void;
   addBattleLog: (message: string) => void;
@@ -24,18 +28,28 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [gameState, setGameState] = useState<GameState>({
-    playerPokemon: null,
-    cpuPokemon: null,
+    playerTeam: [],
+    cpuTeam: [],
+    activePlayerIndex: 0,
+    activeCpuIndex: 0,
     inventory: [...STARTER_ITEMS],
     battleHistory: [],
   });
 
-  const setPlayerPokemon = (pokemon: BattlePokemon | null) => {
-    setGameState(prev => ({ ...prev, playerPokemon: pokemon }));
+  const setPlayerTeam = (team: BattlePokemon[]) => {
+    setGameState(prev => ({ ...prev, playerTeam: team }));
   };
 
-  const setCpuPokemon = (pokemon: BattlePokemon | null) => {
-    setGameState(prev => ({ ...prev, cpuPokemon: pokemon }));
+  const setCpuTeam = (team: BattlePokemon[]) => {
+    setGameState(prev => ({ ...prev, cpuTeam: team }));
+  };
+
+  const setActivePlayerIndex = (index: number) => {
+    setGameState(prev => ({ ...prev, activePlayerIndex: index }));
+  };
+
+  const setActiveCpuIndex = (index: number) => {
+    setGameState(prev => ({ ...prev, activeCpuIndex: index }));
   };
 
   const updateInventory = (items: Item[]) => {
@@ -62,8 +76,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const resetGame = () => {
     setGameState({
-      playerPokemon: null,
-      cpuPokemon: null,
+      playerTeam: [],
+      cpuTeam: [],
+      activePlayerIndex: 0,
+      activeCpuIndex: 0,
       inventory: [...STARTER_ITEMS],
       battleHistory: [],
     });
@@ -81,8 +97,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     <GameContext.Provider
       value={{
         gameState,
-        setPlayerPokemon,
-        setCpuPokemon,
+        setPlayerTeam,
+        setCpuTeam,
+        setActivePlayerIndex,
+        setActiveCpuIndex,
         updateInventory,
         useItem,
         addBattleLog,
