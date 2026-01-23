@@ -76,6 +76,18 @@ export function BattleScreen() {
     };
   }, []);
 
+  const fadeOutMusic = () => {
+    if (!audioRef.current) return;
+
+    const fadeInterval = setInterval(() => {
+      if (audioRef.current && audioRef.current.volume > 0) {
+        audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.01);
+      } else {
+        clearInterval(fadeInterval);
+      }
+    }, 50);
+  };
+
   const handleSetPlayerIndex = (index: number) => {
     setLocalPlayerIndex(index);
     setActivePlayerIndex(index);
@@ -303,7 +315,10 @@ export function BattleScreen() {
                   onFight={() => setMenuState('moves')}
                   onPokemon={() => setMenuState('pokemon')}
                   onBag={() => setMenuState('bag')}
-                  onRun={handleRun}
+                  onRun={() => {
+                    handleRun();
+                    fadeOutMusic();
+                  }}
                   disabled={isProcessing}
                   canSwitch={canSwitch}
                 />
