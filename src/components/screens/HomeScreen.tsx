@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassButton } from '../common/GlassButton';
+import { Pokeball } from '../common/Pokeball';
 
 export function HomeScreen() {
   const navigate = useNavigate();
@@ -30,17 +31,13 @@ export function HomeScreen() {
       <div className="absolute w-[300px] md:w-[600px] h-[300px] md:h-[600px] bg-[radial-gradient(circle,rgba(51,85,255,0.3)_0%,transparent_70%)] -bottom-24 md:-bottom-48 -left-24 md:-left-48 pointer-events-none" />
 
       {/* Decorative Pokeballs */}
-      <div className="absolute top-[10%] left-[5%] w-36 md:w-72 h-36 md:h-72 opacity-10 animate-spin-slow pointer-events-none">
-        <div className="absolute w-full h-1/2 bg-primary-red rounded-t-full top-0" />
-        <div className="absolute w-full h-1/2 bg-slate-100 rounded-b-full bottom-0" />
-        <div className="absolute w-full h-1 md:h-1.5 bg-gray-800 top-1/2 -translate-y-1/2" />
-        <div className="absolute w-6 md:w-12 h-6 md:h-12 bg-slate-100 border-2 md:border-4 border-gray-800 rounded-full top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2" />
+      <div className="md:hidden">
+        <Pokeball size="medium" transparent={true} orientation="top-[10%] left-[5%]" animation="animate-spin-slow" />
+        <Pokeball size="medium" transparent={true} orientation="bottom-[10%] right-[5%]" animation="animate-spin-slow" direction="reverse" />
       </div>
-      <div className="absolute bottom-[10%] right-[5%] w-36 md:w-72 h-36 md:h-72 opacity-10 animate-spin-slow pointer-events-none" style={{ animationDirection: 'reverse' }}>
-        <div className="absolute w-full h-1/2 bg-primary-red rounded-t-full top-0" />
-        <div className="absolute w-full h-1/2 bg-slate-100 rounded-b-full bottom-0" />
-        <div className="absolute w-full h-1 md:h-1.5 bg-gray-800 top-1/2 -translate-y-1/2" />
-        <div className="absolute w-6 md:w-12 h-6 md:h-12 bg-slate-100 border-2 md:border-4 border-gray-800 rounded-full top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2" />
+      <div className="hidden md:block">
+        <Pokeball size="large" transparent={true} orientation="top-[10%] left-[5%]" animation="animate-spin-slow" />
+        <Pokeball size="large" transparent={true} orientation="bottom-[10%] right-[5%]" animation="animate-spin-slow" direction="reverse" />
       </div>
 
       {/* Title */}
