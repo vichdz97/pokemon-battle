@@ -24,7 +24,7 @@ const getStatColor = (value: number): string => {
 
 export function StatsPanel({ pokemon }: StatsPanelProps) {
   return (
-    <div className="min-h-48 md:min-h-85 bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-3 md:p-4 h-full">
+    <div className="min-h-65 md:min-h-85 w-30 md:w-42 bg-gradient-to-b from-tekken-panel to-tekken-dark border border-white/10 rounded-lg p-3 md:p-4 h-full">
       <h3 className="font-orbitron text-[10px] md:text-sm text-tekken-gold uppercase tracking-widest mb-2 md:mb-4 text-center">
         Stats
       </h3>
@@ -75,10 +75,13 @@ export function StatsPanel({ pokemon }: StatsPanelProps) {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex items-center justify-center h-32 md:h-50"
+            className="flex items-center justify-center h-50"
           >
-            <span className="font-rajdhani text-xs md:text-sm text-gray-600 text-center">
+            <span className="hidden md:block font-rajdhani text-xs md:text-sm text-gray-600 text-center">
               Hover over a<br />Pokémon to view stats
+            </span>
+            <span className="md:hidden font-rajdhani text-xs md:text-sm text-gray-600 text-center">
+              Choose a<br />Pokémon to view stats
             </span>
           </motion.div>
         )}
