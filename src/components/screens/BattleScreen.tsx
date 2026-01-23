@@ -12,6 +12,7 @@ import { GlassButton } from '../common/GlassButton';
 import { BattleMove, BattlePokemon } from '../../types/pokemon';
 import { Item } from '../../types/items';
 import { getRandomMoves } from '../../services/pokeApi';
+import { BattleLog } from '../battle/BattleLog';
 
 type MenuState = 'action' | 'moves' | 'bag' | 'pokemon';
 
@@ -272,23 +273,7 @@ export function BattleScreen() {
         </div>
 
         {/* Battle Log */}
-        <AnimatePresence>
-          {showMessage && (
-            <motion.div
-              className="absolute bottom-2 left-2 right-2 md:bottom-20 md:left-0 md:right-0 md:px-6 z-20"
-              initial={{ y: 30, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 30, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="bg-tekken-panel/95 backdrop-blur-xl border-2 border-white/20 rounded-lg p-3 md:p-4 max-w-3xl mx-auto">
-                <p className="font-rajdhani text-sm md:text-lg text-white text-center">
-                  {currentMessage}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <BattleLog showMessage={showMessage} message={currentMessage} />
       </div>
 
       {/* ===== ACTION SECTION ===== */}
