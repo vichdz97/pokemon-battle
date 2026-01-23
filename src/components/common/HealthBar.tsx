@@ -24,18 +24,16 @@ export function HealthBar({ current, max, showText = true, size = 'medium' }: He
   };
 
   return (
-    <div className="w-full">
-      {showText && (
-        <div className="flex justify-between items-center mb-1">
+    <div className="w-full flex flex-col-reverse gap-1">
+      { showText && (
+        <div className="flex items-baseline gap-1">
           <span className="font-rajdhani text-xs text-gray-400 uppercase">HP</span>
-          <span className="font-orbitron text-xs text-white">
-            {Math.max(0, current)}/{max}
-          </span>
+          <span className="font-orbitron text-xs text-slate-100">{Math.max(0, current)}/{max}</span>
         </div>
       )}
-      
+
       <div className={clsx(
-        'relative bg-black/50 rounded-full overflow-hidden',
+        'relative w-full bg-black/50 rounded-full overflow-hidden',
         sizeStyles[size]
       )}>
         {/* Background */}
