@@ -14,6 +14,12 @@ import { useNavigate } from 'react-router-dom';
 const MESSAGE_DISPLAY_TIME = 1800;
 const MESSAGE_TRANSITION_TIME = 400;
 
+const healSfx = new Audio('/src/assets/sounds/heal.mp3');
+const notEffectiveSfx = new Audio('/src/assets/sounds/not-effective.mp3');
+const superEffectiveSfx = new Audio('/src/assets/sounds/super-effective.mp3');
+const physicalAttackSfx = new Audio('/src/assets/sounds/hit.mp3');
+const specialAttackSfx = new Audio('/src/assets/sounds/zap.mp3');
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export function useBattle(
@@ -22,7 +28,9 @@ export function useBattle(
   activePlayerIndex: number,
   activeCpuIndex: number,
   setActivePlayerIndex: (index: number) => void,
-  setActiveCpuIndex: (index: number) => void
+  setActiveCpuIndex: (index: number) => void,
+  updatePlayerTeam: (updater: (team: BattlePokemon[]) => BattlePokemon[]) => void,
+  updateCpuTeam: (updater: (team: BattlePokemon[]) => BattlePokemon[]) => void
 ) {
   const navigate = useNavigate();
   const [currentMessage, setCurrentMessage] = useState('');
@@ -38,21 +46,31 @@ export function useBattle(
 
   const playerTeamRef = useRef(playerTeam);
   const cpuTeamRef = useRef(cpuTeam);
+  const activePlayerIndexRef = useRef(activePlayerIndex);
+  const activeCpuIndexRef = useRef(activeCpuIndex);
 
   useEffect(() => {
     playerTeamRef.current = playerTeam;
+  }, [playerTeam]);
+
+  useEffect(() => {
     cpuTeamRef.current = cpuTeam;
-  }, [playerTeam, cpuTeam]);
+  }, [cpuTeam]);
+
+  useEffect(() => {
+    activePlayerIndexRef.current = activePlayerIndex;
+  }, [activePlayerIndex]);
+
+  useEffect(() => {
+    activeCpuIndexRef.current = activeCpuIndex;
+  }, [activeCpuIndex]);
 
   const showBattleMessage = useCallback(async (message: string) => {
-    setShowMessage(false); // Hide current message first (if visible)
-    await delay(MESSAGE_TRANSITION_TIME); // Wait for exit animation to complete
-
-    // Set new message and show it
+    setShowMessage(false);
+    await delay(MESSAGE_TRANSITION_TIME);
     setCurrentMessage(message);
     setShowMessage(true);
-    
-    await delay(MESSAGE_DISPLAY_TIME); // Wait for the message to be read
+    await delay(MESSAGE_DISPLAY_TIME);
   }, []);
 
   const hideMessage = useCallback(async () => {
@@ -64,24 +82,77 @@ export function useBattle(
     return name.split('-').map(n => n[0].toUpperCase() + n.slice(1)).join(' ');
   };
 
-  const getActivePlayer = useCallback((): BattlePokemon | null => {
-    return playerTeamRef.current[activePlayerIndex] || null;
-  }, [activePlayerIndex]);
-
-  const getActiveCpu = useCallback((): BattlePokemon | null => {
-    return cpuTeamRef.current[activeCpuIndex] || null;
-  }, [activeCpuIndex]);
-
   const isTeamWiped = useCallback((team: BattlePokemon[]): boolean => {
     return team.every(p => p.currentHp <= 0);
   }, []);
 
+  // Apply damage and return the new HP value via a Promise that resolves after state update
+  const applyDamageToPlayer = useCallback((index: number, damage: number): Promise<number> => {
+    return new Promise(resolve => {
+      updatePlayerTeam(team => {
+        const updated = team.map((p, i) => {
+          if (i === index) {
+            const newHp = Math.max(0, p.currentHp - damage);
+            // Use setTimeout to resolve after state update is committed
+            setTimeout(() => resolve(newHp), 0);
+            return { ...p, currentHp: newHp };
+          }
+          return p;
+        });
+        return updated;
+      });
+    });
+  }, [updatePlayerTeam]);
+
+  const applyDamageToCpu = useCallback((index: number, damage: number): Promise<number> => {
+    return new Promise(resolve => {
+      updateCpuTeam(team => {
+        const updated = team.map((p, i) => {
+          if (i === index) {
+            const newHp = Math.max(0, p.currentHp - damage);
+            setTimeout(() => resolve(newHp), 0);
+            return { ...p, currentHp: newHp };
+          }
+          return p;
+        });
+        return updated;
+      });
+    });
+  }, [updateCpuTeam]);
+
+  const decrementMovePp = useCallback((isPlayer: boolean, moveIndex: number) => {
+    const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
+    const activeIndex = isPlayer ? activePlayerIndexRef.current : activeCpuIndexRef.current;
+    
+    updater(team => {
+      return team.map((p, i) => {
+        if (i === activeIndex) {
+          const moves = p.selectedMoves.map((m, mi) => {
+            if (mi === moveIndex) {
+              return { ...m, currentPp: Math.max(0, m.currentPp - 1) };
+            }
+            return m;
+          });
+          return { ...p, selectedMoves: moves };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam, updateCpuTeam]);
+
   const performAttack = useCallback(async (
     attacker: BattlePokemon,
-    defender: BattlePokemon,
+    defenderIndex: number,
     move: BattleMove,
     isPlayerAttacker: boolean
-  ) => {
+  ): Promise<{ damage: number; fainted: boolean }> => {
+    // Read the CURRENT defender from refs to get latest HP (e.g., after healing)
+    const defender = isPlayerAttacker 
+      ? cpuTeamRef.current[defenderIndex]
+      : playerTeamRef.current[defenderIndex];
+
+    if (!defender) return { damage: 0, fainted: false };
+
     await showBattleMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
 
     if (!checkAccuracy(move)) {
@@ -91,6 +162,9 @@ export function useBattle(
     }
 
     const { damage, effectiveness, isCritical } = calculateDamage(attacker, defender, move);
+    if (effectiveness < 1 ) await notEffectiveSfx.play();
+    else if (effectiveness > 1) await superEffectiveSfx.play();
+    else await (move.damage_class.name.includes('physical') ? physicalAttackSfx.play() : specialAttackSfx.play());
 
     // Trigger attack animation
     if (isPlayerAttacker) {
@@ -101,36 +175,37 @@ export function useBattle(
       setTimeout(() => setCpuAttacking(false), 800);
     }
 
-    // Wait for attack animation to land
     await delay(400);
 
-    // Apply damage with visual feedback
-    defender.currentHp = Math.max(0, defender.currentHp - damage);
-    
+    // Apply damage through state updates and get the resulting HP
+    let newHp: number;
     if (isPlayerAttacker) {
+      newHp = await applyDamageToCpu(defenderIndex, damage);
       setCpuDamaged(true);
       setTimeout(() => setCpuDamaged(false), 600);
     } else {
+      newHp = await applyDamageToPlayer(defenderIndex, damage);
       setPlayerDamaged(true);
       setTimeout(() => setPlayerDamaged(false), 600);
     }
 
-    // Wait for damage animation
     await delay(800);
 
     if (isCritical) await showBattleMessage('A critical hit!');
 
     const effectivenessMsg = getEffectivenessMessage(effectiveness);
     if (effectivenessMsg) await showBattleMessage(effectivenessMsg);
-
-    const fainted = defender.currentHp <= 0;
+    
+    // Use the actual new HP from state update to determine faint
+    const fainted = newHp <= 0;
     if (fainted) await showBattleMessage(`${transformName(defender.name)} fainted!`);
 
     await hideMessage();
     return { damage, fainted };
-  }, [showBattleMessage, hideMessage]);
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
+    // Re-read current team state from refs
     const team = isPlayerFainted ? playerTeamRef.current : cpuTeamRef.current;
     
     if (isTeamWiped(team)) {
@@ -140,12 +215,11 @@ export function useBattle(
     }
 
     if (isPlayerFainted) {
-      // Player needs to choose next Pokemon
       setForcedSwitch('player');
       return false;
     } else {
-      // CPU auto-selects next Pokemon
-      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndex);
+      const currentCpuIndex = activeCpuIndexRef.current;
+      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
       if (nextIndex >= 0) {
         await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
         await hideMessage();
@@ -153,25 +227,30 @@ export function useBattle(
       }
       return false;
     }
-  }, [isTeamWiped, activeCpuIndex, setActiveCpuIndex, showBattleMessage, hideMessage]);
+  }, [isTeamWiped, setActiveCpuIndex, showBattleMessage, hideMessage]);
 
   const executeTurn = useCallback(async (playerMove: BattleMove) => {
-    const player = getActivePlayer();
-    const cpu = getActiveCpu();
+    const player = playerTeamRef.current[activePlayerIndexRef.current];
+    const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
     if (!player || !cpu || isProcessing) return;
     
     setIsProcessing(true);
 
+    // Decrement player move PP
+    const playerMoveIndex = player.selectedMoves.findIndex(m => m.id === playerMove.id);
+    if (playerMoveIndex >= 0) {
+      decrementMovePp(true, playerMoveIndex);
+    }
+
     // Check if CPU wants to switch
-    const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndex);
+    const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndexRef.current);
     
     if (cpuWantsToSwitch) {
-      const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndex);
+      const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndexRef.current);
       
       if (switchTarget >= 0) {
-        // CPU switching happens after player's move (switching has lower priority than attacks)
         // Player attacks first
-        const playerResult = await performAttack(player, cpu, playerMove, true);
+        const playerResult = await performAttack(player, activeCpuIndexRef.current, playerMove, true);
         
         if (playerResult.fainted) {
           const battleOver = await handleFaintedPokemon(false);
@@ -180,7 +259,7 @@ export function useBattle(
             return;
           }
         } else {
-          // CPU switches instead of attacking
+          // CPU switches
           await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
           setActiveCpuIndex(switchTarget);
           await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[switchTarget].name)}!`);
@@ -202,74 +281,90 @@ export function useBattle(
       return;
     }
 
-    const playerGoesFirst = determineFirstAttacker(player, cpu) === 'pokemon1';
-    const firstAttacker = playerGoesFirst ? player : cpu;
-    const secondAttacker = playerGoesFirst ? cpu : player;
-    const firstMove = playerGoesFirst ? playerMove : cpuMove;
-    const secondMove = playerGoesFirst ? cpuMove : playerMove;
-
-    // First attack
-    const firstResult = await performAttack(
-      firstAttacker,
-      secondAttacker,
-      firstMove,
-      playerGoesFirst
-    );
-
-    if (firstResult.fainted) {
-      const battleOver = await handleFaintedPokemon(playerGoesFirst ? false : true);
-      if (battleOver) {
-        setIsProcessing(false);
-        return;
-      }
-      // If player fainted, they need to switch - don't continue turn
-      if (!playerGoesFirst) {
-        setIsProcessing(false);
-        return;
-      }
-      setIsProcessing(false);
-      return;
+    // Decrement CPU move PP
+    const cpuMoveIndex = cpu.selectedMoves.findIndex(m => m.id === cpuMove.id);
+    if (cpuMoveIndex >= 0) {
+      decrementMovePp(false, cpuMoveIndex);
     }
 
-    // Brief pause between attacks
-    await delay(600);
+    const playerGoesFirst = determineFirstAttacker(player, cpu) === 'pokemon1';
 
-    // Second attack
-    cpuMove.currentPp--;
-    const secondResult = await performAttack(
-      secondAttacker,
-      firstAttacker,
-      secondMove,
-      !playerGoesFirst
-    );
+    if (playerGoesFirst) {
+      // Player attacks CPU
+      const firstResult = await performAttack(player, activeCpuIndexRef.current, playerMove, true);
 
-    if (secondResult.fainted) await handleFaintedPokemon(!playerGoesFirst ? false : true);
+      if (firstResult.fainted) {
+        const battleOver = await handleFaintedPokemon(false);
+        if (battleOver) {
+          setIsProcessing(false);
+          return;
+        }
+        // CPU fainted and was replaced, turn ends
+        setIsProcessing(false);
+        return;
+      }
+
+      await delay(600);
+
+      // CPU attacks player - re-read current CPU from refs (in case index changed)
+      const currentCpu = cpuTeamRef.current[activeCpuIndexRef.current];
+      if (currentCpu && currentCpu.currentHp > 0) {
+        const secondResult = await performAttack(currentCpu, activePlayerIndexRef.current, cpuMove, false);
+        if (secondResult.fainted) {
+          await handleFaintedPokemon(true);
+        }
+      }
+    } else {
+      // CPU attacks player first
+      const firstResult = await performAttack(cpu, activePlayerIndexRef.current, cpuMove, false);
+
+      if (firstResult.fainted) {
+        const battleOver = await handleFaintedPokemon(true);
+        if (battleOver) {
+          setIsProcessing(false);
+          return;
+        }
+        // Player fainted, needs to switch, turn ends
+        setIsProcessing(false);
+        return;
+      }
+
+      await delay(600);
+
+      // Player attacks CPU
+      const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
+      if (currentPlayer && currentPlayer.currentHp > 0) {
+        const secondResult = await performAttack(currentPlayer, activeCpuIndexRef.current, playerMove, true);
+        if (secondResult.fainted) {
+          await handleFaintedPokemon(false);
+        }
+      }
+    }
 
     setIsProcessing(false);
-  }, [isProcessing, getActivePlayer, getActiveCpu, activeCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp]);
 
   const executePlayerSwitch = useCallback(async (newIndex: number) => {
-    const player = getActivePlayer();
-    if (!player || isProcessing) return;
+    if (isProcessing && forcedSwitch !== 'player') return;
 
     setIsProcessing(true);
 
     const isForcedSwitch = forcedSwitch === 'player';
+    const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
     
-    if (!isForcedSwitch) {
-      // Voluntary switch: switching has priority over attacks
-      await showBattleMessage(`${transformName(player.name)}, come back!`);
+    if (!isForcedSwitch && currentPlayer) {
+      await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       await hideMessage();
 
-      // CPU gets to attack after player switches
-      const cpu = getActiveCpu();
+      // CPU gets to act after player switches
+      const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
       if (cpu && cpu.currentHp > 0) {
-        const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndex);
+        const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndexRef.current);
         
         if (cpuWantsToSwitch) {
-          const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndex);
+          const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndexRef.current);
           if (switchTarget >= 0) {
             await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
             setActiveCpuIndex(switchTarget);
@@ -279,9 +374,12 @@ export function useBattle(
         } else {
           const cpuMove = selectCpuMove(cpu);
           if (cpuMove && cpuMove.currentPp > 0) {
-            cpuMove.currentPp--;
-            const newPlayer = playerTeamRef.current[newIndex];
-            const result = await performAttack(cpu, newPlayer, cpuMove, false);
+            const cpuMoveIndex = cpu.selectedMoves.findIndex(m => m.id === cpuMove.id);
+            if (cpuMoveIndex >= 0) {
+              decrementMovePp(false, cpuMoveIndex);
+            }
+            // Attack the newly switched-in Pokemon using newIndex
+            const result = await performAttack(cpu, newIndex, cpuMove, false);
             
             if (result.fainted) {
               await handleFaintedPokemon(true);
@@ -298,26 +396,24 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, forcedSwitch, getActivePlayer, getActiveCpu, activeCpuIndex, setActivePlayerIndex, setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage]);
+  }, [isProcessing, forcedSwitch, setActivePlayerIndex, setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, decrementMovePp]);
 
   const useItemAndEndTurn = useCallback(async (itemName: string, healAmount: number) => {
-    const player = getActivePlayer();
-    const cpu = getActiveCpu();
-    if (!player || !cpu || isProcessing) return;
+    const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
+    if (!cpu || isProcessing) return;
     
     setIsProcessing(true);
 
+    await healSfx.play();
     await showBattleMessage(`Used ${transformName(itemName)}! Restored ${healAmount} HP.`);
     await hideMessage();
 
-    // Brief pause before CPU attacks
     await delay(400);
 
-    // CPU attacks or switches
-    const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndex);
+    const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndexRef.current);
 
     if (cpuWantsToSwitch) {
-      const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndex);
+      const switchTarget = selectCpuSwitchTarget(cpuTeamRef.current, activeCpuIndexRef.current);
       if (switchTarget >= 0) {
         await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
         setActiveCpuIndex(switchTarget);
@@ -334,17 +430,22 @@ export function useBattle(
       return;
     }
 
-    cpuMove.currentPp--;
-    const result = await performAttack(cpu, player, cpuMove, false);
+    const cpuMoveIndex = cpu.selectedMoves.findIndex(m => m.id === cpuMove.id);
+    if (cpuMoveIndex >= 0) {
+      decrementMovePp(false, cpuMoveIndex);
+    }
+
+    // Attack player at their current active index - performAttack reads fresh HP from ref
+    const result = await performAttack(cpu, activePlayerIndexRef.current, cpuMove, false);
 
     if (result.fainted) await handleFaintedPokemon(true);
 
     setIsProcessing(false);
-  }, [isProcessing, getActivePlayer, getActiveCpu, activeCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp]);
 
   const handleRun = useCallback(async () => {
-    const player = getActivePlayer();
-    const cpu = getActiveCpu();
+    const player = playerTeamRef.current[activePlayerIndexRef.current];
+    const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
     if (!player || !cpu || isProcessing) return;
     setIsProcessing(true);
 
@@ -361,7 +462,7 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, getActivePlayer, getActiveCpu, showBattleMessage, hideMessage, navigate]);
+  }, [isProcessing, showBattleMessage, hideMessage, navigate]);
 
   const resetBattle = useCallback(() => {
     setCurrentMessage('');

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
@@ -14,7 +14,7 @@ import { Item } from '../../types/items';
 import { getRandomMoves } from '../../services/pokeApi';
 import { BattleLog } from '../battle/BattleLog';
 
-type MenuState = 'action' | 'moves' | 'bag' | 'pokemon';
+type MenuState = 'action' | 'moves' | 'bag' | 'pokemon' | 'bag-target-heal' | 'bag-target-revive';
 
 export function BattleScreen() {
   const navigate = useNavigate();
@@ -29,24 +29,38 @@ export function BattleScreen() {
   } = useGame();
 
   const [menuState, setMenuState] = useState<MenuState>('action');
-  const [localPlayerTeam, setLocalPlayerTeam] = useState<BattlePokemon[]>(gameState.playerTeam);
-  const [localCpuTeam, setLocalCpuTeam] = useState<BattlePokemon[]>(gameState.cpuTeam);
-  const [localPlayerIndex, setLocalPlayerIndex] = useState(gameState.activePlayerIndex);
-  const [localCpuIndex, setLocalCpuIndex] = useState(gameState.activeCpuIndex);
+  const [localPlayerTeam, setLocalPlayerTeam] = useState<BattlePokemon[]>([]);
+  const [localCpuTeam, setLocalCpuTeam] = useState<BattlePokemon[]>([]);
+  const [localPlayerIndex, setLocalPlayerIndex] = useState(0);
+  const [localCpuIndex, setLocalCpuIndex] = useState(0);
   const [isResetting, setIsResetting] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [pendingItem, setPendingItem] = useState<Item | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Initialize local state from game state once
   useEffect(() => {
     if (gameState.playerTeam.length === 0 || gameState.cpuTeam.length === 0) {
       navigate('/selection');
-    } else if (!isResetting) {
-      setLocalPlayerTeam([...gameState.playerTeam]);
-      setLocalCpuTeam([...gameState.cpuTeam]);
+      return;
+    }
+    
+    if (!initialized && !isResetting) {
+      // Deep clone the teams to avoid shared references
+      setLocalPlayerTeam(gameState.playerTeam.map(p => ({ 
+        ...p, 
+        selectedMoves: p.selectedMoves.map(m => ({ ...m }))
+      })));
+      setLocalCpuTeam(gameState.cpuTeam.map(p => ({ 
+        ...p, 
+        selectedMoves: p.selectedMoves.map(m => ({ ...m }))
+      })));
       setLocalPlayerIndex(gameState.activePlayerIndex);
       setLocalCpuIndex(gameState.activeCpuIndex);
+      setInitialized(true);
     }
-  }, [gameState.playerTeam, gameState.cpuTeam, gameState.activePlayerIndex, gameState.activeCpuIndex, navigate, isResetting]);
+  }, [gameState, navigate, initialized, isResetting]);
 
   // Play battle music
   useEffect(() => {
@@ -68,7 +82,7 @@ export function BattleScreen() {
     };
     playMusic();
 
-    // Cleanup function
+    // Cleanup
     return () => {
       if (battleMusic) {
         battleMusic.pause();
@@ -79,7 +93,6 @@ export function BattleScreen() {
 
   const fadeOutMusic = () => {
     if (!audioRef.current) return;
-
     const fadeInterval = setInterval(() => {
       if (audioRef.current && audioRef.current.volume > 0) {
         audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.01);
@@ -89,15 +102,29 @@ export function BattleScreen() {
     }, 50);
   };
 
-  const handleSetPlayerIndex = (index: number) => {
+  const handleSetPlayerIndex = useCallback((index: number) => {
     setLocalPlayerIndex(index);
     setActivePlayerIndex(index);
-  };
+  }, [setActivePlayerIndex]);
 
-  const handleSetCpuIndex = (index: number) => {
+  const handleSetCpuIndex = useCallback((index: number) => {
     setLocalCpuIndex(index);
     setActiveCpuIndex(index);
-  };
+  }, [setActiveCpuIndex]);
+
+  const handleUpdatePlayerTeam = useCallback((updater: (team: BattlePokemon[]) => BattlePokemon[]) => {
+    setLocalPlayerTeam(prev => {
+      const updated = updater(prev);
+      return updated;
+    });
+  }, []);
+
+  const handleUpdateCpuTeam = useCallback((updater: (team: BattlePokemon[]) => BattlePokemon[]) => {
+    setLocalCpuTeam(prev => {
+      const updated = updater(prev);
+      return updated;
+    });
+  }, []);
 
   const {
     currentMessage,
@@ -121,19 +148,20 @@ export function BattleScreen() {
     localPlayerIndex,
     localCpuIndex,
     handleSetPlayerIndex,
-    handleSetCpuIndex
+    handleSetCpuIndex,
+    handleUpdatePlayerTeam,
+    handleUpdateCpuTeam
   );
 
   const activePlayer = localPlayerTeam[localPlayerIndex];
   const activeCpu = localCpuTeam[localCpuIndex];
 
-  if (!activePlayer || !activeCpu) return null;
+  if (!initialized || !activePlayer || !activeCpu) return null;
 
   const canSwitch = localPlayerTeam.some((p, i) => i !== localPlayerIndex && p.currentHp > 0);
 
   const handleMoveSelect = (move: BattleMove) => {
     if (move.currentPp > 0 && !isProcessing) {
-      move.currentPp--;
       executeTurn(move);
       setMenuState('action');
     }
@@ -150,38 +178,102 @@ export function BattleScreen() {
     if (isProcessing) return;
 
     if (item.type === 'healing') {
-      const healAmount = item.effect?.heal || 0;
-      const actualHeal = Math.min(healAmount, activePlayer.maxHp - activePlayer.currentHp);
+      if (activePlayer.currentHp >= activePlayer.maxHp) return;
 
-      if (actualHeal > 0) {
-        setLocalPlayerTeam(prev => {
-          const updated = [...prev];
-          updated[localPlayerIndex] = {
-            ...updated[localPlayerIndex],
-            currentHp: Math.min(updated[localPlayerIndex].maxHp, updated[localPlayerIndex].currentHp + healAmount)
-          };
-          return updated;
-        });
-        useItem(item.id);
-        useItemAndEndTurn(item.name, actualHeal);
-        setMenuState('action');
+      // For healing items, check if there are other injured Pokemon too
+      const injuredPokemon = localPlayerTeam.filter(p => p.currentHp > 0 && p.currentHp < p.maxHp);
+      
+      if (injuredPokemon.length > 1) {
+        // Show target selection
+        setPendingItem(item);
+        setMenuState('bag-target-heal');
+      } else if (injuredPokemon.length === 1) {
+        // Only one option, use directly
+        const targetIndex = localPlayerTeam.findIndex(p => p.id === injuredPokemon[0].id && p.currentHp === injuredPokemon[0].currentHp);
+        applyHealingItem(item, targetIndex >= 0 ? targetIndex : localPlayerIndex);
       }
     } else if (item.type === 'revive') {
-      // Find first fainted Pokemon in team
-      const faintedIndex = localPlayerTeam.findIndex((p, i) => i !== localPlayerIndex && p.currentHp <= 0);
-      if (faintedIndex >= 0) {
-        const reviveAmount = item.id === 'max-revive'
-          ? localPlayerTeam[faintedIndex].maxHp
-          : Math.floor(localPlayerTeam[faintedIndex].maxHp / 2);
-        setLocalPlayerTeam(prev => {
-          const updated = [...prev];
-          updated[faintedIndex] = { ...updated[faintedIndex], currentHp: reviveAmount };
-          return updated;
-        });
-        useItem(item.id);
-        useItemAndEndTurn(item.name, reviveAmount);
-        setMenuState('action');
+      const faintedPokemon = localPlayerTeam.filter(p => p.currentHp <= 0);
+      
+      if (faintedPokemon.length === 0) return;
+      
+      if (faintedPokemon.length > 1) {
+        // Show target selection for revive
+        setPendingItem(item);
+        setMenuState('bag-target-revive');
+      } else {
+        // Only one fainted Pokemon
+        const faintedIndex = localPlayerTeam.findIndex(p => p.currentHp <= 0);
+        if (faintedIndex >= 0) {
+          applyReviveItem(item, faintedIndex);
+        }
       }
+    }
+  };
+
+  const applyHealingItem = async (item: Item, targetIndex: number) => {
+    const target = localPlayerTeam[targetIndex];
+    if (!target || target.currentHp <= 0 || target.currentHp >= target.maxHp) return;
+
+    const healAmount = item.id === 'max-potion' 
+      ? target.maxHp - target.currentHp 
+      : Math.min(item.effect?.heal || 0, target.maxHp - target.currentHp);
+
+    if (healAmount > 0) {
+      setLocalPlayerTeam(prev => {
+        const updated = prev.map((p, i) => {
+          if (i === targetIndex) {
+            return {
+              ...p,
+              currentHp: Math.min(p.maxHp, p.currentHp + healAmount)
+            };
+          }
+          return p;
+        });
+        return updated;
+      });
+      useItem(item.id);
+      useItemAndEndTurn(item.name, healAmount);
+      setPendingItem(null);
+      setMenuState('action');
+    }
+  };
+
+  const applyReviveItem = async (item: Item, targetIndex: number) => {
+    const target = localPlayerTeam[targetIndex];
+    if (!target || target.currentHp > 0) return;
+
+    const reviveAmount = item.id === 'max-revive'
+      ? target.maxHp
+      : Math.floor(target.maxHp / 2);
+
+    setLocalPlayerTeam(prev => {
+      const updated = prev.map((p, i) => {
+        if (i === targetIndex) {
+          return {
+            ...p,
+            currentHp: reviveAmount
+          };
+        }
+        return p;
+      });
+      return updated;
+    });
+    useItem(item.id);
+    useItemAndEndTurn(item.name, reviveAmount);
+    setPendingItem(null);
+    setMenuState('action');
+  };
+
+  const handleHealTargetSelect = (index: number) => {
+    if (pendingItem) {
+      applyHealingItem(pendingItem, index);
+    }
+  };
+
+  const handleReviveTargetSelect = (index: number) => {
+    if (pendingItem) {
+      applyReviveItem(pendingItem, index);
     }
   };
 
@@ -189,16 +281,25 @@ export function BattleScreen() {
     if (gameState.playerTeam.length === 0 || gameState.cpuTeam.length === 0) return;
 
     setIsResetting(true);
+    setInitialized(false);
 
     try {
       const [freshPlayerTeam, freshCpuTeam] = await Promise.all([
         Promise.all(gameState.playerTeam.map(async (p) => {
           const moves = await getRandomMoves(p);
-          return { ...p, currentHp: p.maxHp, selectedMoves: moves };
+          return { 
+            ...p, 
+            currentHp: p.maxHp, 
+            selectedMoves: moves.map(m => ({ ...m }))
+          };
         })),
         Promise.all(gameState.cpuTeam.map(async (p) => {
           const moves = await getRandomMoves(p);
-          return { ...p, currentHp: p.maxHp, selectedMoves: moves };
+          return { 
+            ...p, 
+            currentHp: p.maxHp, 
+            selectedMoves: moves.map(m => ({ ...m }))
+          };
         }))
       ]);
 
@@ -213,6 +314,8 @@ export function BattleScreen() {
       resetInventory();
       resetBattle();
       setMenuState('action');
+      setPendingItem(null);
+      setInitialized(true);
     } catch (error) {
       console.error('Failed to reset battle:', error);
     } finally {
@@ -244,6 +347,7 @@ export function BattleScreen() {
       <div className="absolute hidden md:block">
         <img src="/src/assets/images/bg.jpeg" alt="Mobile Background" className="h-screen object-cover" />
       </div>
+      
       {/* ===== ARENA SECTION ===== */}
       <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">
         {/* CPU Pokemon - upper right */}
@@ -336,6 +440,32 @@ export function BattleScreen() {
                   disabled={isProcessing}
                 />
               )}
+
+              {!showForcedSwitch && menuState === 'bag-target-heal' && (
+                <ItemTargetMenu
+                  team={localPlayerTeam}
+                  mode="heal"
+                  itemName={pendingItem?.name || ''}
+                  onSelect={handleHealTargetSelect}
+                  onBack={() => {
+                    setPendingItem(null);
+                    setMenuState('bag');
+                  }}
+                />
+              )}
+
+              {!showForcedSwitch && menuState === 'bag-target-revive' && (
+                <ItemTargetMenu
+                  team={localPlayerTeam}
+                  mode="revive"
+                  itemName={pendingItem?.name || ''}
+                  onSelect={handleReviveTargetSelect}
+                  onBack={() => {
+                    setPendingItem(null);
+                    setMenuState('bag');
+                  }}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -386,5 +516,95 @@ export function BattleScreen() {
         </div>
       )}
     </div>
+  );
+}
+
+// ============ Item Target Selection Component ============
+
+interface ItemTargetMenuProps {
+  team: BattlePokemon[];
+  mode: 'heal' | 'revive';
+  itemName: string;
+  onSelect: (index: number) => void;
+  onBack: () => void;
+}
+
+function ItemTargetMenu({ team, mode, itemName, onSelect, onBack }: ItemTargetMenuProps) {
+  const eligiblePokemon = team.map((p, i) => ({ pokemon: p, index: i })).filter(({ pokemon }) => {
+    if (mode === 'heal') {
+      return pokemon.currentHp > 0 && pokemon.currentHp < pokemon.maxHp;
+    } else {
+      return pokemon.currentHp <= 0;
+    }
+  });
+
+  return (
+    <motion.div
+      className="w-full md:w-96 space-y-3"
+      initial={{ x: 50, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-3">
+        <p className="font-rajdhani text-sm text-gray-300 mb-3 text-center">
+          Use <span className="text-tekken-gold font-semibold">{itemName}</span> on which Pokémon?
+        </p>
+        <div className="space-y-2 max-h-40 md:max-h-80 overflow-y-auto scrollbar-thin">
+          {eligiblePokemon.map(({ pokemon, index }) => (
+            <motion.button
+              key={`${pokemon.id}-${index}`}
+              className={`w-full p-2.5 rounded-lg border-2 flex items-center gap-3 transition-all duration-200
+                ${mode === 'heal' 
+                  ? 'bg-gradient-to-r from-green-900/20 to-green-800/20 border-green-500/30 hover:border-green-500/60' 
+                  : 'bg-gradient-to-r from-yellow-900/20 to-yellow-800/20 border-yellow-500/30 hover:border-yellow-500/60'
+                }`}
+              onClick={() => onSelect(index)}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+            >
+              <img
+                src={pokemon.sprites.other.home.front_default || pokemon.sprites.front_default}
+                alt={pokemon.name}
+                className={`w-10 h-10 object-contain ${mode === 'revive' ? 'grayscale' : ''}`}
+              />
+              <div className="flex-1 text-left">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-orbitron text-sm font-semibold text-white capitalize">
+                    {pokemon.name}
+                  </span>
+                  <span className="font-rajdhani text-xs text-gray-400">
+                    Lv.{pokemon.level}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 h-2 bg-black/50 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${
+                        mode === 'revive' ? 'bg-red-500' : 
+                        (pokemon.currentHp / pokemon.maxHp) > 0.5 ? 'bg-green-500' : 
+                        (pokemon.currentHp / pokemon.maxHp) > 0.2 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.max(0, (pokemon.currentHp / pokemon.maxHp) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="font-orbitron text-[10px] text-gray-300">
+                    {pokemon.currentHp}/{pokemon.maxHp}
+                  </span>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      <GlassButton
+        variant="gray"
+        className="w-full bg-tekken-panel/60"
+        size="small"
+        onClick={onBack}
+      >
+        ← Back
+      </GlassButton>
+    </motion.div>
   );
 }
