@@ -177,16 +177,20 @@ export function useBattle(
 
     await delay(400);
 
-    // Apply damage through state updates and get the resulting HP
+    // Skip the defender's damage flash when the move had no effect
     let newHp: number;
     if (isPlayerAttacker) {
       newHp = await applyDamageToCpu(defenderIndex, damage);
-      setCpuDamaged(true);
-      setTimeout(() => setCpuDamaged(false), 600);
+      if (effectiveness > 0) {
+        setCpuDamaged(true);
+        setTimeout(() => setCpuDamaged(false), 600);
+      }
     } else {
       newHp = await applyDamageToPlayer(defenderIndex, damage);
-      setPlayerDamaged(true);
-      setTimeout(() => setPlayerDamaged(false), 600);
+      if (effectiveness > 0) {
+        setPlayerDamaged(true);
+        setTimeout(() => setPlayerDamaged(false), 600);
+      }
     }
 
     await delay(800);

@@ -1,12 +1,22 @@
 import { BattlePokemon, BattleMove } from '../types/pokemon';
 import { getTypeEffectiveness } from './typeEffectiveness';
 
+// Levitate → immune to Ground
+const isAbilityImmune = (defender: BattlePokemon, moveType: string): boolean => {
+  const abilities = defender.abilities.map(a => a.ability.name);
+  return moveType === 'ground' && abilities.includes('levitate');
+};
+
 export const calculateDamage = (
   attacker: BattlePokemon,
   defender: BattlePokemon,
   move: BattleMove
 ): { damage: number; effectiveness: number; isCritical: boolean } => {
   if (!move.power) return { damage: 0, effectiveness: 1, isCritical: false };
+
+  if (isAbilityImmune(defender, move.type.name)) {
+    return { damage: 0, effectiveness: 0, isCritical: false };
+  }
 
   // Get stats
   const level = attacker.level;
