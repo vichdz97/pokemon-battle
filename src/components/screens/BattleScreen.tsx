@@ -178,18 +178,18 @@ export function BattleScreen() {
     if (isProcessing) return;
 
     if (item.type === 'healing') {
-      if (activePlayer.currentHp >= activePlayer.maxHp) return;
-
-      // For healing items, check if there are other injured Pokemon too
+      // Check for injured Pokémon
       const injuredPokemon = localPlayerTeam.filter(p => p.currentHp > 0 && p.currentHp < p.maxHp);
       
+      if (injuredPokemon.length === 0) return;
+
       if (injuredPokemon.length > 1) {
-        // Show target selection
+        // Multiple injured Pokémon — player picks a target
         setPendingItem(item);
         setMenuState('bag-target-heal');
-      } else if (injuredPokemon.length === 1) {
-        // Only one option, use directly
-        const targetIndex = localPlayerTeam.findIndex(p => p.id === injuredPokemon[0].id && p.currentHp === injuredPokemon[0].currentHp);
+      } else {
+        // Exactly one injured Pokémon — heal it directly
+        const targetIndex = localPlayerTeam.findIndex(p => p.currentHp > 0 && p.currentHp < p.maxHp);
         applyHealingItem(item, targetIndex >= 0 ? targetIndex : localPlayerIndex);
       }
     } else if (item.type === 'revive') {
