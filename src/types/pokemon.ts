@@ -76,7 +76,7 @@ export interface Move {
   effect_entries: {
     effect: string;
     short_effect: string;
-  }[];
+  }[]; // [0] = french, [1] = english
 }
 
 export interface BattleMove extends Move {
