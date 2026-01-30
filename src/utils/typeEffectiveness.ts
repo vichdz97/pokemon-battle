@@ -53,8 +53,8 @@ export const getTypeEffectiveness = (attackType: string, defenderTypes: string[]
   return multiplier;
 };
 
-export const getEffectivenessMessage = (effectiveness: number): string => {
-  if (effectiveness === 0) return "It has no effect!";
+export const getEffectivenessMessage = (effectiveness: number, pokemonName: string): string => {
+  if (effectiveness === 0) return `It doesn't affect ${pokemonName}...`;
   if (effectiveness < 1) return "It's not very effective...";
   if (effectiveness > 1) return "It's super effective!";
   return "";

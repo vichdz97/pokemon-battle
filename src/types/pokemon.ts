@@ -34,6 +34,14 @@ export interface Stat {
   };
 }
 
+export interface StatStages {
+  attack: number;
+  defense: number;
+  'special-attack': number;
+  'special-defense': number;
+  speed: number;
+}
+
 export interface PokemonType {
   slot: number;
   type: {
@@ -56,6 +64,14 @@ export interface Ability {
   };
   is_hidden: boolean;
   slot: number;
+}
+
+export interface AbilityEffect {
+  abilityName: string;
+  type: 'immunity';
+  healing?: number; // Amount of HP to heal (actual value, not percentage)
+  statBoost?: { stat: keyof StatStages; stages: number };
+  specialBoost?: 'flash-fire'; // Special flag for Flash Fire
 }
 
 export interface Move {
@@ -90,6 +106,8 @@ export interface BattlePokemon extends Pokemon {
   level: number;
   selectedMoves: BattleMove[];
   status?: string;
+  statStages: StatStages;
+  flashFireActive?: boolean; // Flash Fire boost active
 }
 
 export interface TeamSlot {

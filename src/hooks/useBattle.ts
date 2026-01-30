@@ -1,12 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { BattlePokemon, BattleMove } from '../types/pokemon';
+import { AbilityEffect, BattlePokemon, BattleMove, StatStages } from '../types/pokemon';
 import { 
   calculateDamage, 
   checkAccuracy, 
   selectCpuMove, 
   determineFirstAttacker,
   shouldCpuSwitch,
-  selectCpuSwitchTarget
+  selectCpuSwitchTarget,
+  applyStatChange,
+  getStatChangeMessage
 } from '../utils/battleCalculations';
 import { getEffectivenessMessage } from '../utils/typeEffectiveness';
 import { useNavigate } from 'react-router-dom';
@@ -120,6 +122,93 @@ export function useBattle(
     });
   }, [updateCpuTeam]);
 
+  // Apply healing to a Pokemon
+  const applyHealingToPlayer = useCallback((index: number, healing: number): Promise<number> => {
+    return new Promise(resolve => {
+      updatePlayerTeam(team => {
+        const updated = team.map((p, i) => {
+          if (i === index) {
+            const newHp = Math.min(p.maxHp, p.currentHp + healing);
+            setTimeout(() => resolve(newHp), 0);
+            return { ...p, currentHp: newHp };
+          }
+          return p;
+        });
+        return updated;
+      });
+    });
+  }, [updatePlayerTeam]);
+
+  const applyHealingToCpu = useCallback((index: number, healing: number): Promise<number> => {
+    return new Promise(resolve => {
+      updateCpuTeam(team => {
+        const updated = team.map((p, i) => {
+          if (i === index) {
+            const newHp = Math.min(p.maxHp, p.currentHp + healing);
+            setTimeout(() => resolve(newHp), 0);
+            return { ...p, currentHp: newHp };
+          }
+          return p;
+        });
+        return updated;
+      });
+    });
+  }, [updateCpuTeam]);
+
+  // Apply stat change to a Pokemon
+  const applyStatChangeToPlayer = useCallback((index: number, stat: keyof StatStages, stages: number): { actualChange: number; maxedOut: boolean } => {
+    let result = { actualChange: 0, maxedOut: false };
+    updatePlayerTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          const { newStages, actualChange, maxedOut } = applyStatChange(p.statStages, stat, stages);
+          result = { actualChange, maxedOut };
+          return { ...p, statStages: newStages };
+        }
+        return p;
+      });
+    });
+    return result;
+  }, [updatePlayerTeam]);
+
+  const applyStatChangeToCpu = useCallback((index: number, stat: keyof StatStages, stages: number): { actualChange: number; maxedOut: boolean } => {
+    let result = { actualChange: 0, maxedOut: false };
+    updateCpuTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          const { newStages, actualChange, maxedOut } = applyStatChange(p.statStages, stat, stages);
+          result = { actualChange, maxedOut };
+          return { ...p, statStages: newStages };
+        }
+        return p;
+      });
+    });
+    return result;
+  }, [updateCpuTeam]);
+
+  // Apply Flash Fire boost
+  const applyFlashFireToPlayer = useCallback((index: number) => {
+    updatePlayerTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          return { ...p, flashFireActive: true };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam]);
+
+  const applyFlashFireToCpu = useCallback((index: number) => {
+    updateCpuTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          return { ...p, flashFireActive: true };
+        }
+        return p;
+      });
+    });
+  }, [updateCpuTeam]);
+
   const decrementMovePp = useCallback((isPlayer: boolean, moveIndex: number) => {
     const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
     const activeIndex = isPlayer ? activePlayerIndexRef.current : activeCpuIndexRef.current;
@@ -139,6 +228,69 @@ export function useBattle(
       });
     });
   }, [updatePlayerTeam, updateCpuTeam]);
+
+  // Handle ability effect (healing, stat boost, flash fire)
+  const handleAbilityEffect = useCallback(async (
+    abilityEffect: AbilityEffect,
+    defenderIndex: number,
+    defenderName: string,
+    isPlayerDefender: boolean
+  ) => {
+    // Show immunity message
+    await showBattleMessage(`It doesn't affect ${transformName(defenderName)}...`);
+
+    // Handle healing
+    if (abilityEffect.healing && abilityEffect.healing > 0) {
+      const defender = isPlayerDefender 
+        ? playerTeamRef.current[defenderIndex]
+        : cpuTeamRef.current[defenderIndex];
+      
+      // Only heal if not at full HP
+      if (defender && defender.currentHp < defender.maxHp) {
+        await healSfx.play();
+        if (isPlayerDefender) {
+          await applyHealingToPlayer(defenderIndex, abilityEffect.healing);
+        } else {
+          await applyHealingToCpu(defenderIndex, abilityEffect.healing);
+        }
+        await showBattleMessage(`${transformName(defenderName)} restored HP!`);
+      }
+    }
+
+    // Handle stat boost
+    if (abilityEffect.statBoost) {
+      const { stat, stages } = abilityEffect.statBoost;
+      const result = isPlayerDefender
+        ? applyStatChangeToPlayer(defenderIndex, stat, stages)
+        : applyStatChangeToCpu(defenderIndex, stat, stages);
+      
+      const message = getStatChangeMessage(
+        transformName(defenderName),
+        stat,
+        stages,
+        result.maxedOut
+      );
+      await showBattleMessage(message);
+    }
+
+    // Handle Flash Fire
+    if (abilityEffect.specialBoost === 'flash-fire') {
+      const defender = isPlayerDefender 
+        ? playerTeamRef.current[defenderIndex]
+        : cpuTeamRef.current[defenderIndex];
+      
+      if (defender && !defender.flashFireActive) {
+        if (isPlayerDefender) {
+          applyFlashFireToPlayer(defenderIndex);
+        } else {
+          applyFlashFireToCpu(defenderIndex);
+        }
+        await showBattleMessage(`${transformName(defenderName)}'s Fire-type moves powered up!`);
+      } else if (defender?.flashFireActive) {
+        await showBattleMessage(`${transformName(defenderName)}'s Flash Fire is already active!`);
+      }
+    }
+  }, [showBattleMessage, applyHealingToPlayer, applyHealingToCpu, applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer, applyFlashFireToCpu]);
 
   const performAttack = useCallback(async (
     attacker: BattlePokemon,
@@ -161,8 +313,21 @@ export function useBattle(
       return { damage: 0, fainted: false };
     }
 
-    const { damage, effectiveness, isCritical } = calculateDamage(attacker, defender, move);
-    if (effectiveness < 1 ) await notEffectiveSfx.play();
+    const { damage, effectiveness, isCritical, abilityEffect } = calculateDamage(attacker, defender, move);
+    
+    // Handle ability immunity with all its effects
+    if (abilityEffect) {
+      await handleAbilityEffect(
+        abilityEffect,
+        defenderIndex,
+        defender.name,
+        !isPlayerAttacker // defender is player if attacker is CPU
+      );
+      await hideMessage();
+      return { damage: 0, fainted: false };
+    }
+    
+    if (effectiveness < 1) await notEffectiveSfx.play();
     else if (effectiveness > 1) await superEffectiveSfx.play();
     else await (move.damage_class.name.includes('physical') ? physicalAttackSfx.play() : specialAttackSfx.play());
 
@@ -197,7 +362,7 @@ export function useBattle(
 
     if (isCritical) await showBattleMessage('A critical hit!');
 
-    const effectivenessMsg = getEffectivenessMessage(effectiveness);
+    const effectivenessMsg = getEffectivenessMessage(effectiveness, transformName(defender.name));
     if (effectivenessMsg) await showBattleMessage(effectivenessMsg);
     
     // Use the actual new HP from state update to determine faint
@@ -206,7 +371,7 @@ export function useBattle(
 
     await hideMessage();
     return { damage, fainted };
-  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu]);
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, handleAbilityEffect]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
     // Re-read current team state from refs

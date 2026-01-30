@@ -1,6 +1,7 @@
 import axios from 'axios';
-import { Pokemon, Move, BattleMove } from '../types/pokemon';
+import { Pokemon, Move, BattleMove, BattlePokemon } from '../types/pokemon';
 import { POKEMON_ROSTER } from '../utils/pokemonRoster';
+import { createDefaultStatStages } from '../utils/battleCalculations';
 
 const BASE_URL = 'https://pokeapi.co/api/v2';
 
@@ -77,6 +78,23 @@ export const getRandomMoves = async (pokemon: Pokemon, count: number = 4): Promi
   }
   
   return validMoves;
+};
+
+/**
+ * Creates a BattlePokemon from a Pokemon with initialized battle state
+ */
+export const createBattlePokemon = (pokemon: Pokemon, level: number = 50): Omit<BattlePokemon, 'selectedMoves'> => {
+  const hpStat = pokemon.stats.find(s => s.stat.name === 'hp')?.base_stat || 100;
+  const maxHp = Math.floor(((2 * hpStat * level) / 100) + level + 10);
+  
+  return {
+    ...pokemon,
+    currentHp: maxHp,
+    maxHp,
+    level,
+    statStages: createDefaultStatStages(),
+    flashFireActive: false,
+  };
 };
 
 export const getSprite = (pokemon: Pokemon, isBack: boolean = false): string => {

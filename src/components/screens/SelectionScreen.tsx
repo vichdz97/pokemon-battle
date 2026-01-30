@@ -10,7 +10,7 @@ import { TeamRoster } from '../selection/TeamRoster';
 import { GlassButton } from '../common/GlassButton';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { Pokemon, BattlePokemon } from '../../types/pokemon';
-import { getRandomMoves } from '../../services/pokeApi';
+import { createBattlePokemon, getRandomMoves } from '../../services/pokeApi';
 
 const MAX_TEAM_SIZE = 6;
 
@@ -90,13 +90,12 @@ export function SelectionScreen() {
     setMobileStep(target);
   };
 
-  const prepareBattlePokemon = async (poke: Pokemon): Promise<BattlePokemon> => {
-    const moves = await getRandomMoves(poke);
+  const prepareBattlePokemon = async (pokemon: Pokemon): Promise<BattlePokemon> => {
+    const moves = await getRandomMoves(pokemon);
+    const baseBattlePokemon = createBattlePokemon(pokemon, 50);
+    
     return {
-      ...poke,
-      currentHp: poke.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-      maxHp: poke.stats.find(s => s.stat.name === 'hp')?.base_stat || 100,
-      level: 50,
+      ...baseBattlePokemon,
       selectedMoves: moves,
     };
   };

@@ -13,6 +13,7 @@ import { BattleMove, BattlePokemon } from '../../types/pokemon';
 import { Item } from '../../types/items';
 import { getRandomMoves } from '../../services/pokeApi';
 import { BattleLog } from '../battle/BattleLog';
+import { createDefaultStatStages } from '../../utils/battleCalculations';
 
 type MenuState = 'action' | 'moves' | 'bag' | 'pokemon' | 'bag-target-heal' | 'bag-target-revive';
 
@@ -290,7 +291,9 @@ export function BattleScreen() {
           return { 
             ...p, 
             currentHp: p.maxHp, 
-            selectedMoves: moves.map(m => ({ ...m }))
+            selectedMoves: moves.map(m => ({ ...m })),
+            statStages: createDefaultStatStages(),
+            flashFireActive: false,
           };
         })),
         Promise.all(gameState.cpuTeam.map(async (p) => {
@@ -298,7 +301,9 @@ export function BattleScreen() {
           return { 
             ...p, 
             currentHp: p.maxHp, 
-            selectedMoves: moves.map(m => ({ ...m }))
+            selectedMoves: moves.map(m => ({ ...m })),
+            statStages: createDefaultStatStages(),
+            flashFireActive: false,
           };
         }))
       ]);
