@@ -40,6 +40,8 @@ export interface StatStages {
   'special-attack': number;
   'special-defense': number;
   speed: number;
+  accuracy: number;
+  evasion: number;
 }
 
 export interface PokemonType {
@@ -69,9 +71,47 @@ export interface Ability {
 export interface AbilityEffect {
   abilityName: string;
   type: 'immunity';
-  healing?: number; // Amount of HP to heal (actual value, not percentage)
+  healing?: number;
   statBoost?: { stat: keyof StatStages; stages: number };
-  specialBoost?: 'flash-fire'; // Special flag for Flash Fire
+  specialBoost?: 'flash-fire';
+}
+
+// Status conditions
+export type StatusCondition = 'paralysis' | 'burn' | 'poison' | 'badly-poisoned' | 'sleep' | 'freeze' | null;
+export type VolatileCondition = 'confusion' | 'flinch' | 'leech-seed';
+
+export interface MoveStatChange {
+  change: number;
+  stat: {
+    name: string;
+    url: string;
+  };
+}
+
+export interface MoveMeta {
+  ailment: {
+    name: string;
+    url: string;
+  };
+  ailment_chance: number;
+  category: {
+    name: string;
+    url: string;
+  };
+  crit_rate: number;
+  drain: number;
+  flinch_chance: number;
+  healing: number;
+  max_hits: number | null;
+  max_turns: number | null;
+  min_hits: number | null;
+  min_turns: number | null;
+  stat_chance: number;
+}
+
+export interface MoveTarget {
+  name: string;
+  url: string;
 }
 
 export interface Move {
@@ -93,6 +133,9 @@ export interface Move {
     effect: string;
     short_effect: string;
   }[]; // [0] = french, [1] = english
+  stat_changes: MoveStatChange[];
+  meta: MoveMeta | null;
+  target: MoveTarget;
 }
 
 export interface BattleMove extends Move {
@@ -105,9 +148,12 @@ export interface BattlePokemon extends Pokemon {
   maxHp: number;
   level: number;
   selectedMoves: BattleMove[];
-  status?: string;
+  status: StatusCondition;
+  statusTurns: number;
+  volatileConditions: VolatileCondition[];
+  confusionTurns: number;
   statStages: StatStages;
-  flashFireActive?: boolean; // Flash Fire boost active
+  flashFireActive?: boolean;
 }
 
 export interface TeamSlot {

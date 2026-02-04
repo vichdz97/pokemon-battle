@@ -28,7 +28,7 @@ export const getRosterPokemon = async (): Promise<Pokemon[]> => {
     return cache.get(cacheKey);
   }
 
-  const pokemonPromises = POKEMON_ROSTER.map(pokemon => getPokemonById(pokemon.id));
+  const pokemonPromises = POKEMON_ROSTER.map(pokemonId => getPokemonById(pokemonId));
   const results = await Promise.all(pokemonPromises);
   cache.set(cacheKey, results);
   return results;
@@ -48,15 +48,29 @@ export const getMoveByName = async (name: string): Promise<Move> => {
 export const getRandomMoves = async (pokemon: Pokemon, count: number = 4): Promise<BattleMove[]> => {
   const allMoves = pokemon.moves;
   const shuffled = [...allMoves].sort(() => Math.random() - 0.5);
-  const selectedMoves = shuffled.slice(0, Math.min(count * 4, shuffled.length));
+  const selectedMoves = shuffled.slice(0, Math.min(count * 6, shuffled.length));
   
   const movePromises = selectedMoves.map((m) => 
     getMoveByName(m.move.name).catch(() => null)
   );
   
   const moves = await Promise.all(movePromises);
-  const validMoves = moves
-    .filter((m): m is Move => m !== null && m.power !== null && m.power > 0)
+  
+  // Separate damaging moves and status moves
+  const damagingMoves = moves.filter((m): m is Move => 
+    m !== null && m.power !== null && m.power > 0
+  );
+  
+  const statusMoves = moves.filter((m): m is Move => 
+    m !== null && m.damage_class.name === 'status' && 
+    (m.stat_changes.length > 0 || (m.meta && m.meta.ailment && m.meta.ailment.name !== 'none'))
+  );
+  
+  // Take up to 3 damaging moves and 1 status move for variety
+  const selectedDamaging = damagingMoves.slice(0, Math.min(3, count));
+  const selectedStatus = statusMoves.slice(0, Math.min(1, count - selectedDamaging.length));
+  
+  const finalMoves = [...selectedDamaging, ...selectedStatus]
     .slice(0, count)
     .map((move): BattleMove => ({
       ...move,
@@ -64,25 +78,23 @@ export const getRandomMoves = async (pokemon: Pokemon, count: number = 4): Promi
       maxPp: move.pp,
     }));
   
-  // If we don't have enough damage moves, fill with any moves
-  if (validMoves.length < count) {
+  // If we don't have enough moves, fill with any valid moves
+  if (finalMoves.length < count) {
     const remainingMoves = moves
-      .filter((m): m is Move => m !== null && !validMoves.find(v => v.id === m.id))
-      .slice(0, count - validMoves.length)
+      .filter((m): m is Move => m !== null && !finalMoves.find(v => v.id === m.id))
+      .slice(0, count - finalMoves.length)
       .map((move): BattleMove => ({
         ...move,
         currentPp: move.pp,
         maxPp: move.pp,
       }));
-    return [...validMoves, ...remainingMoves];
+    return [...finalMoves, ...remainingMoves];
   }
   
-  return validMoves;
+  return finalMoves;
 };
 
-/**
- * Creates a BattlePokemon from a Pokemon with initialized battle state
- */
+// Creates a BattlePokemon from a Pokemon with initialized battle state
 export const createBattlePokemon = (pokemon: Pokemon, level: number = 50): Omit<BattlePokemon, 'selectedMoves'> => {
   const hpStat = pokemon.stats.find(s => s.stat.name === 'hp')?.base_stat || 100;
   const maxHp = Math.floor(((2 * hpStat * level) / 100) + level + 10);
@@ -94,6 +106,10 @@ export const createBattlePokemon = (pokemon: Pokemon, level: number = 50): Omit<
     level,
     statStages: createDefaultStatStages(),
     flashFireActive: false,
+    status: null,
+    statusTurns: 0,
+    volatileConditions: [],
+    confusionTurns: 0,
   };
 };
 

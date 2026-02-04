@@ -1,4 +1,4 @@
-import { AbilityEffect, BattlePokemon, BattleMove, StatStages } from '../types/pokemon';
+import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition } from '../types/pokemon';
 import { getTypeEffectiveness } from './typeEffectiveness';
 
 // Ability-based immunities: moveType -> list of abilities that grant immunity
@@ -17,7 +17,6 @@ const healingAbilities: Record<string, string[]> = {
 };
 
 // Abilities that boost stats when hit by their immune type
-// Format: { moveType: { abilityName: { stat: statName, stages: number } } }
 const statBoostAbilities: Record<string, Record<string, { stat: keyof StatStages; stages: number }>> = {
   electric: {
     'lightning-rod': { stat: 'special-attack', stages: 1 },
@@ -39,10 +38,7 @@ const specialBoostAbilities: Record<string, string[]> = {
   fire: ['flash-fire'],
 };
 
-/**
- * Checks if the defender has an ability that grants immunity to the move type.
- * Returns the ability effect details if found, or null otherwise.
- */
+// Checks if the defender has an ability that grants immunity to the move type.
 const getAbilityEffect = (defender: BattlePokemon, moveType: string): AbilityEffect | null => {
   const defenderAbilities = defender.abilities.map(a => a.ability.name);
   const immuneAbilities = abilityImmunities[moveType] || [];
@@ -54,19 +50,16 @@ const getAbilityEffect = (defender: BattlePokemon, moveType: string): AbilityEff
         type: 'immunity',
       };
 
-      // Check for healing effect
       const healingAbilitiesForType = healingAbilities[moveType] || [];
       if (healingAbilitiesForType.includes(ability)) {
         effect.healing = Math.floor(defender.maxHp * 0.25);
       }
 
-      // Check for stat boost effect
       const statBoostsForType = statBoostAbilities[moveType];
       if (statBoostsForType && statBoostsForType[ability]) {
         effect.statBoost = statBoostsForType[ability];
       }
 
-      // Check for special boost (Flash Fire)
       const specialBoostsForType = specialBoostAbilities[moveType] || [];
       if (specialBoostsForType.includes(ability)) {
         effect.specialBoost = 'flash-fire';
@@ -78,9 +71,7 @@ const getAbilityEffect = (defender: BattlePokemon, moveType: string): AbilityEff
   return null;
 };
 
-/**
- * Calculates the stat multiplier based on stat stages (-6 to +6)
- */
+// Calculates the stat multiplier based on stat stages (-6 to +6)
 export const getStatMultiplier = (stage: number): number => {
   const clampedStage = Math.max(-6, Math.min(6, stage));
   if (clampedStage >= 0) {
@@ -90,27 +81,33 @@ export const getStatMultiplier = (stage: number): number => {
   }
 };
 
-/**
- * Gets the effective stat value after applying stat stages
- */
+// Calculates accuracy/evasion multiplier (different formula)
+export const getAccuracyMultiplier = (stage: number): number => {
+  const clampedStage = Math.max(-6, Math.min(6, stage));
+  if (clampedStage >= 0) {
+    return (3 + clampedStage) / 3;
+  } else {
+    return 3 / (3 - clampedStage);
+  }
+};
+
+// Gets the effective stat value after applying stat stages
 export const getEffectiveStat = (baseStat: number, stage: number): number => {
   return Math.floor(baseStat * getStatMultiplier(stage));
 };
 
-/**
- * Creates default stat stages (all at 0)
- */
+// Creates default stat stages (all at 0)
 export const createDefaultStatStages = (): StatStages => ({
   attack: 0,
   defense: 0,
   'special-attack': 0,
   'special-defense': 0,
   speed: 0,
+  accuracy: 0,
+  evasion: 0,
 });
 
-/**
- * Applies a stat stage change and returns the new stages (clamped to -6 to +6)
- */
+// Applies a stat stage change and returns the new stages (clamped to -6 to +6)
 export const applyStatChange = (
   currentStages: StatStages,
   stat: keyof StatStages,
@@ -131,6 +128,209 @@ export const applyStatChange = (
   };
 };
 
+// Check if a Pokemon can move (status conditions may prevent it)
+export const canPokemonMove = (pokemon: BattlePokemon): { canMove: boolean; reason: string | null } => {
+  // Check paralysis (25% chance to be fully paralyzed)
+  if (pokemon.status === 'paralysis') {
+    if (Math.random() < 0.25) {
+      return { canMove: false, reason: 'paralysis' };
+    }
+  }
+
+  // Check sleep
+  if (pokemon.status === 'sleep') {
+    if (pokemon.statusTurns > 0) {
+      return { canMove: false, reason: 'sleep' };
+    }
+  }
+
+  // Check freeze (20% chance to thaw each turn)
+  if (pokemon.status === 'freeze') {
+    if (Math.random() >= 0.2) {
+      return { canMove: false, reason: 'freeze' };
+    }
+  }
+
+  // Check confusion (33% chance to hurt self)
+  if (pokemon.volatileConditions.includes('confusion')) {
+    if (pokemon.confusionTurns > 0 && Math.random() < 0.33) {
+      return { canMove: false, reason: 'confusion' };
+    }
+  }
+
+  // Check flinch
+  if (pokemon.volatileConditions.includes('flinch')) {
+    return { canMove: false, reason: 'flinch' };
+  }
+
+  return { canMove: true, reason: null };
+};
+
+// Calculate confusion self-damage
+export const calculateConfusionDamage = (pokemon: BattlePokemon): number => {
+  const level = pokemon.level;
+  const attack = pokemon.stats.find(s => s.stat.name === 'attack')?.base_stat || 100;
+  const defense = pokemon.stats.find(s => s.stat.name === 'defense')?.base_stat || 100;
+  
+  // Confusion damage uses a 40-power typeless physical attack
+  const baseDamage = ((((2 * level / 5) + 2) * 40 * (attack / defense)) / 50) + 2;
+  return Math.floor(baseDamage);
+};
+
+// Apply end-of-turn status damage
+export const calculateStatusDamage = (pokemon: BattlePokemon): number => {
+  if (pokemon.status === 'burn' || pokemon.status === 'poison') {
+    return Math.floor(pokemon.maxHp / 16);
+  }
+  if (pokemon.status === 'badly-poisoned') {
+    // Badly poisoned damage increases each turn (stored in statusTurns as multiplier)
+    const multiplier = pokemon.statusTurns || 1;
+    return Math.floor((pokemon.maxHp * multiplier) / 16);
+  }
+  return 0;
+};
+
+// Get status condition abbreviation for display
+export const getStatusAbbreviation = (status: StatusCondition): string => {
+  switch (status) {
+    case 'paralysis': return 'PAR';
+    case 'burn': return 'BRN';
+    case 'poison': return 'PSN';
+    case 'badly-poisoned': return 'TOX';
+    case 'sleep': return 'SLP';
+    case 'freeze': return 'FRZ';
+    default: return '';
+  }
+};
+
+// Get status condition color for display
+export const getStatusColor = (status: StatusCondition): string => {
+  switch (status) {
+    case 'paralysis': return '#F8D030'; // Yellow
+    case 'burn': return '#F08030'; // Orange
+    case 'poison':
+    case 'badly-poisoned': return '#A040A0'; // Purple
+    case 'sleep': return '#A8A878'; // Gray
+    case 'freeze': return '#98D8D8'; // Cyan
+    default: return '#888888';
+  }
+};
+
+// Determine the target of a move's stat changes
+export const getMoveStatTarget = (move: BattleMove): 'user' | 'target' | 'both' => {
+  const targetName = move.target?.name || '';
+  
+  // Moves that target the user
+  if (targetName === 'user' || targetName === 'users-field' || targetName === 'user-and-allies') {
+    return 'user';
+  }
+  
+  // Moves that affect all Pokemon
+  if (targetName === 'all-pokemon' || targetName === 'entire-field') {
+    return 'both';
+  }
+  
+  // Default: target the opponent
+  return 'target';
+};
+
+// Parse stat changes from a move
+export const parseStatChanges = (move: BattleMove): { stat: keyof StatStages; stages: number }[] => {
+  if (!move.stat_changes || move.stat_changes.length === 0) {
+    return [];
+  }
+
+  return move.stat_changes.map(sc => {
+    // Map API stat names to our StatStages keys
+    let statName = sc.stat.name;
+    if (statName === 'special-attack') statName = 'special-attack';
+    else if (statName === 'special-defense') statName = 'special-defense';
+    
+    return {
+      stat: statName as keyof StatStages,
+      stages: sc.change,
+    };
+  });
+};
+
+// Determine status condition from move meta
+export const getMoveStatusEffect = (move: BattleMove): { status: StatusCondition; chance: number } | null => {
+  if (!move.meta || !move.meta.ailment || move.meta.ailment.name === 'none') {
+    return null;
+  }
+
+  const ailmentName = move.meta.ailment.name;
+  let status: StatusCondition = null;
+
+  switch (ailmentName) {
+    case 'paralysis':
+      status = 'paralysis';
+      break;
+    case 'burn':
+      status = 'burn';
+      break;
+    case 'poison':
+      status = 'poison';
+      break;
+    case 'toxic': // Badly poisoned from Toxic
+      status = 'badly-poisoned';
+      break;
+    case 'sleep':
+      status = 'sleep';
+      break;
+    case 'freeze':
+      status = 'freeze';
+      break;
+  }
+
+  if (!status) return null;
+
+  // Chance is 0-100, or 0 means 100% for status moves
+  let chance = move.meta.ailment_chance;
+  if (chance === 0 && move.damage_class.name === 'status') {
+    chance = 100;
+  }
+
+  return { status, chance };
+};
+
+// Check if a Pokemon is immune to a status condition
+export const isImmuneToStatus = (pokemon: BattlePokemon, status: StatusCondition): boolean => {
+  // Already has a status condition (can't stack non-volatile conditions)
+  if (pokemon.status !== null) {
+    return true;
+  }
+
+  const types = pokemon.types.map(t => t.type.name);
+
+  switch (status) {
+    case 'burn':
+      return types.includes('fire'); // Fire types are immune to burn
+    case 'paralysis':
+      return types.includes('electric'); // Electric types are immune to paralysis (Gen 6+)
+    case 'poison':
+    case 'badly-poisoned':
+      return types.includes('poison') || types.includes('steel'); // Poison and Steel types are immune to poison
+    case 'freeze': 
+      return types.includes('ice'); // Ice types are immune to freeze
+    default:
+      return false;
+  }
+};
+
+// Check if a move is a status move (no direct damage)
+export const isStatusMove = (move: BattleMove): boolean => {
+  return move.damage_class.name === 'status';
+};
+
+// Check if a move has healing effect
+export const getMoveHealingPercent = (move: BattleMove): number => {
+  if (move.meta && move.meta.healing) {
+    return move.meta.healing;
+  }
+  return 0;
+};
+
 export interface DamageResult {
   damage: number;
   effectiveness: number;
@@ -143,7 +343,10 @@ export const calculateDamage = (
   defender: BattlePokemon,
   move: BattleMove
 ): DamageResult => {
-  if (!move.power) return { damage: 0, effectiveness: 1, isCritical: false };
+  // Status moves don't deal direct damage
+  if (!move.power || move.damage_class.name === 'status') {
+    return { damage: 0, effectiveness: 1, isCritical: false };
+  }
 
   // Check for ability-based immunity
   const abilityEffect = getAbilityEffect(defender, move.type.name);
@@ -166,8 +369,13 @@ export const calculateDamage = (
   const attackStage = attacker.statStages?.[attackStatName] || 0;
   const defenseStage = defender.statStages?.[defenseStatName] || 0;
   
-  const attackStat = getEffectiveStat(baseAttackStat, attackStage);
+  let attackStat = getEffectiveStat(baseAttackStat, attackStage);
   const defenseStat = getEffectiveStat(baseDefenseStat, defenseStage);
+
+  // Burn halves physical attack
+  if (attacker.status === 'burn' && isPhysical) {
+    attackStat = Math.floor(attackStat / 2);
+  }
 
   // Calculate modifiers
   const defenderTypes = defender.types.map(t => t.type.name);
@@ -195,21 +403,55 @@ export const calculateDamage = (
 
 export const determineFirstAttacker = (
   pokemon1: BattlePokemon,
-  pokemon2: BattlePokemon
+  pokemon2: BattlePokemon,
+  move1Priority?: number,
+  move2Priority?: number
 ): 'pokemon1' | 'pokemon2' => {
+  // Check move priority first
+  const priority1 = move1Priority ?? 0;
+  const priority2 = move2Priority ?? 0;
+  
+  if (priority1 !== priority2) {
+    return priority1 > priority2 ? 'pokemon1' : 'pokemon2';
+  }
+
   // Apply speed stages when determining turn order
   const baseSpeed1 = pokemon1.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
   const baseSpeed2 = pokemon2.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
   
-  const speed1 = getEffectiveStat(baseSpeed1, pokemon1.statStages?.speed || 0);
-  const speed2 = getEffectiveStat(baseSpeed2, pokemon2.statStages?.speed || 0);
+  let speed1 = getEffectiveStat(baseSpeed1, pokemon1.statStages?.speed || 0);
+  let speed2 = getEffectiveStat(baseSpeed2, pokemon2.statStages?.speed || 0);
   
-  return speed1 >= speed2 ? 'pokemon1' : 'pokemon2';
+  // Paralysis halves speed
+  if (pokemon1.status === 'paralysis') {
+    speed1 = Math.floor(speed1 / 2);
+  }
+  if (pokemon2.status === 'paralysis') {
+    speed2 = Math.floor(speed2 / 2);
+  }
+  
+  // Speed tie: random
+  if (speed1 === speed2) {
+    return Math.random() < 0.5 ? 'pokemon1' : 'pokemon2';
+  }
+  
+  return speed1 > speed2 ? 'pokemon1' : 'pokemon2';
 };
 
-export const checkAccuracy = (move: BattleMove): boolean => {
-  if (!move.accuracy) return true;
-  return Math.random() * 100 < move.accuracy;
+export const checkAccuracy = (
+  move: BattleMove,
+  attacker: BattlePokemon,
+  defender: BattlePokemon
+): boolean => {
+  if (!move.accuracy) return true; // Moves with null accuracy always hit
+  
+  const accuracyStage = attacker.statStages?.accuracy || 0;
+  const evasionStage = defender.statStages?.evasion || 0;
+  
+  const accuracyMultiplier = getAccuracyMultiplier(accuracyStage - evasionStage);
+  const finalAccuracy = move.accuracy * accuracyMultiplier;
+  
+  return Math.random() * 100 < finalAccuracy;
 };
 
 export const selectCpuMove = (cpu: BattlePokemon): BattleMove | null => {
@@ -218,23 +460,26 @@ export const selectCpuMove = (cpu: BattlePokemon): BattleMove | null => {
   if (availableMoves.length === 0) return null;
 
   const movesWithPower = availableMoves.filter(m => m.power);
+  const statusMoves = availableMoves.filter(m => m.damage_class.name === 'status');
+  
+  // 40% chance to use a status move if available
+  if (statusMoves.length > 0 && Math.random() < 0.4) {
+    return statusMoves[Math.floor(Math.random() * statusMoves.length)];
+  }
   
   if (movesWithPower.length === 0) {
     return availableMoves[Math.floor(Math.random() * availableMoves.length)];
   }
 
-  // 70% chance to use strongest move
-  if (Math.random() < 0.7) {
+  // 50% chance to use strongest move
+  if (Math.random() < 0.5) {
     return movesWithPower.sort((a, b) => (b.power || 0) - (a.power || 0))[0];
   }
   
   return movesWithPower[Math.floor(Math.random() * movesWithPower.length)];
 };
 
-/**
- * Determines if the CPU should switch its active Pokémon.
- * CPU switches when HP is below 20% and there are healthier alternatives.
- */
+// Determines if the CPU should switch its active Pokémon.
 export const shouldCpuSwitch = (
   activeCpu: BattlePokemon,
   cpuTeam: BattlePokemon[],
@@ -245,7 +490,6 @@ export const shouldCpuSwitch = (
   // Only consider switching if HP is below 40%
   if (hpPercent > 40) return false;
 
-  // Check if there are healthier alternatives
   const hasHealthierAlternative = cpuTeam.some((p, i) => {
     if (i === activeIndex) return false;
     if (p.currentHp <= 0) return false;
@@ -259,10 +503,7 @@ export const shouldCpuSwitch = (
   return Math.random() < 0.8;
 };
 
-/**
- * Selects the best Pokémon for the CPU to switch to.
- * Prefers Pokémon with highest HP percentage.
- */
+// Selects the best Pokémon for the CPU to switch to.
 export const selectCpuSwitchTarget = (
   cpuTeam: BattlePokemon[],
   activeIndex: number
@@ -284,9 +525,7 @@ export const selectCpuSwitchTarget = (
   return bestIndex;
 };
 
-/**
- * Formats a stat name for display (e.g., "special-attack" -> "Special Attack")
- */
+// Formats a stat name for display
 export const formatStatName = (statName: string): string => {
   return statName
     .split('-')
@@ -294,9 +533,7 @@ export const formatStatName = (statName: string): string => {
     .join(' ');
 };
 
-/**
- * Gets the message for a stat change
- */
+// Gets the message for a stat change
 export const getStatChangeMessage = (
   pokemonName: string,
   stat: string,
@@ -326,5 +563,55 @@ export const getStatChangeMessage = (
     return `${pokemonName}'s ${formattedStat} rose${intensity}!`;
   } else {
     return `${pokemonName}'s ${formattedStat} fell${intensity}!`;
+  }
+};
+
+// Gets the message for a status condition being inflicted
+export const getStatusInflictedMessage = (pokemonName: string, status: StatusCondition): string => {
+  switch (status) {
+    case 'paralysis':
+      return `${pokemonName} is paralyzed! It may be unable to move!`;
+    case 'burn':
+      return `${pokemonName} was burned!`;
+    case 'poison':
+      return `${pokemonName} was poisoned!`;
+    case 'badly-poisoned':
+      return `${pokemonName} was badly poisoned!`;
+    case 'sleep':
+      return `${pokemonName} fell asleep!`;
+    case 'freeze':
+      return `${pokemonName} was frozen solid!`;
+    default:
+      return '';
+  }
+};
+
+// Gets the message for a status condition preventing action
+export const getStatusPreventMessage = (pokemonName: string, reason: string): string => {
+  switch (reason) {
+    case 'paralysis':
+      return `${pokemonName} is paralyzed! It can't move!`;
+    case 'sleep':
+      return `${pokemonName} is fast asleep.`;
+    case 'freeze':
+      return `${pokemonName} is frozen solid!`;
+    case 'confusion':
+      return `${pokemonName} hurt itself in its confusion!`;
+    case 'flinch':
+      return `${pokemonName} flinched and couldn't move!`;
+    default:
+      return `${pokemonName} couldn't move!`;
+  }
+};
+
+// Gets the message for waking up or thawing
+export const getStatusCuredMessage = (pokemonName: string, status: StatusCondition): string => {
+  switch (status) {
+    case 'sleep':
+      return `${pokemonName} woke up!`;
+    case 'freeze':
+      return `${pokemonName} thawed out!`;
+    default:
+      return '';
   }
 };

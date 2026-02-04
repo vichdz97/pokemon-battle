@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { AbilityEffect, BattlePokemon, BattleMove, StatStages } from '../types/pokemon';
+import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition } from '../types/pokemon';
 import { 
   calculateDamage, 
   checkAccuracy, 
@@ -8,7 +8,19 @@ import {
   shouldCpuSwitch,
   selectCpuSwitchTarget,
   applyStatChange,
-  getStatChangeMessage
+  getStatChangeMessage,
+  canPokemonMove,
+  calculateConfusionDamage,
+  calculateStatusDamage,
+  getStatusPreventMessage,
+  getStatusInflictedMessage,
+  getStatusCuredMessage,
+  isStatusMove,
+  parseStatChanges,
+  getMoveStatTarget,
+  getMoveStatusEffect,
+  isImmuneToStatus,
+  getMoveHealingPercent
 } from '../utils/battleCalculations';
 import { getEffectivenessMessage } from '../utils/typeEffectiveness';
 import { useNavigate } from 'react-router-dom';
@@ -45,6 +57,7 @@ export function useBattle(
   const [winner, setWinner] = useState<'player' | 'cpu' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [forcedSwitch, setForcedSwitch] = useState<'player' | 'cpu' | null>(null);
+  const [switchPrompt, setSwitchPrompt] = useState(false);
 
   const playerTeamRef = useRef(playerTeam);
   const cpuTeamRef = useRef(cpuTeam);
@@ -68,11 +81,11 @@ export function useBattle(
   }, [activeCpuIndex]);
 
   const showBattleMessage = useCallback(async (message: string) => {
-    setShowMessage(false);
-    await delay(MESSAGE_TRANSITION_TIME);
+    hideMessage();
     setCurrentMessage(message);
     setShowMessage(true);
     await delay(MESSAGE_DISPLAY_TIME);
+    hideMessage();
   }, []);
 
   const hideMessage = useCallback(async () => {
@@ -88,14 +101,12 @@ export function useBattle(
     return team.every(p => p.currentHp <= 0);
   }, []);
 
-  // Apply damage and return the new HP value via a Promise that resolves after state update
   const applyDamageToPlayer = useCallback((index: number, damage: number): Promise<number> => {
     return new Promise(resolve => {
       updatePlayerTeam(team => {
         const updated = team.map((p, i) => {
           if (i === index) {
             const newHp = Math.max(0, p.currentHp - damage);
-            // Use setTimeout to resolve after state update is committed
             setTimeout(() => resolve(newHp), 0);
             return { ...p, currentHp: newHp };
           }
@@ -122,7 +133,6 @@ export function useBattle(
     });
   }, [updateCpuTeam]);
 
-  // Apply healing to a Pokemon
   const applyHealingToPlayer = useCallback((index: number, healing: number): Promise<number> => {
     return new Promise(resolve => {
       updatePlayerTeam(team => {
@@ -155,7 +165,6 @@ export function useBattle(
     });
   }, [updateCpuTeam]);
 
-  // Apply stat change to a Pokemon
   const applyStatChangeToPlayer = useCallback((index: number, stat: keyof StatStages, stages: number): { actualChange: number; maxedOut: boolean } => {
     let result = { actualChange: 0, maxedOut: false };
     updatePlayerTeam(team => {
@@ -186,7 +195,80 @@ export function useBattle(
     return result;
   }, [updateCpuTeam]);
 
-  // Apply Flash Fire boost
+  const applyStatusToPlayer = useCallback((index: number, status: StatusCondition) => {
+    updatePlayerTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          let statusTurns = 0;
+          if (status === 'sleep') {
+            statusTurns = Math.floor(Math.random() * 3) + 1; // 1-3 turns
+          } else if (status === 'badly-poisoned') {
+            statusTurns = 1; // Multiplier starts at 1
+          }
+          return { ...p, status, statusTurns };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam]);
+
+  const applyStatusToCpu = useCallback((index: number, status: StatusCondition) => {
+    updateCpuTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          let statusTurns = 0;
+          if (status === 'sleep') {
+            statusTurns = Math.floor(Math.random() * 3) + 1;
+          } else if (status === 'badly-poisoned') {
+            statusTurns = 1;
+          }
+          return { ...p, status, statusTurns };
+        }
+        return p;
+      });
+    });
+  }, [updateCpuTeam]);
+
+  const updateStatusTurns = useCallback((isPlayer: boolean, index: number) => {
+    const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
+    updater(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          let newStatus = p.status;
+          let newStatusTurns = p.statusTurns;
+          
+          if (p.status === 'sleep') {
+            newStatusTurns = Math.max(0, p.statusTurns - 1);
+            if (newStatusTurns === 0) {
+              newStatus = null;
+            }
+          } else if (p.status === 'badly-poisoned') {
+            newStatusTurns = p.statusTurns + 1;
+          }
+          
+          return { ...p, status: newStatus, statusTurns: newStatusTurns };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam, updateCpuTeam]);
+
+  const clearVolatileCondition = useCallback((isPlayer: boolean, index: number, condition: string) => {
+    const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
+    updater(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          return {
+            ...p,
+            volatileConditions: p.volatileConditions.filter(c => c !== condition),
+            confusionTurns: condition === 'confusion' ? 0 : p.confusionTurns,
+          };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam, updateCpuTeam]);
+
   const applyFlashFireToPlayer = useCallback((index: number) => {
     updatePlayerTeam(team => {
       return team.map((p, i) => {
@@ -229,17 +311,14 @@ export function useBattle(
     });
   }, [updatePlayerTeam, updateCpuTeam]);
 
-  // Handle ability effect (healing, stat boost, flash fire)
   const handleAbilityEffect = useCallback(async (
     abilityEffect: AbilityEffect,
     defenderIndex: number,
     defenderName: string,
     isPlayerDefender: boolean
   ) => {
-    // Show immunity message
     await showBattleMessage(`It doesn't affect ${transformName(defenderName)}...`);
 
-    // Handle healing
     if (abilityEffect.healing && abilityEffect.healing > 0) {
       const defender = isPlayerDefender 
         ? playerTeamRef.current[defenderIndex]
@@ -257,7 +336,6 @@ export function useBattle(
       }
     }
 
-    // Handle stat boost
     if (abilityEffect.statBoost) {
       const { stat, stages } = abilityEffect.statBoost;
       const result = isPlayerDefender
@@ -273,7 +351,6 @@ export function useBattle(
       await showBattleMessage(message);
     }
 
-    // Handle Flash Fire
     if (abilityEffect.specialBoost === 'flash-fire') {
       const defender = isPlayerDefender 
         ? playerTeamRef.current[defenderIndex]
@@ -292,8 +369,122 @@ export function useBattle(
     }
   }, [showBattleMessage, applyHealingToPlayer, applyHealingToCpu, applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer, applyFlashFireToCpu]);
 
+  const handleStatusMoveEffects = useCallback(async (
+    attacker: BattlePokemon,
+    attackerIndex: number,
+    defenderIndex: number,
+    move: BattleMove,
+    isPlayerAttacker: boolean
+  ) => {
+    const defender = isPlayerAttacker 
+      ? cpuTeamRef.current[defenderIndex]
+      : playerTeamRef.current[defenderIndex];
+
+    if (!defender) return;
+
+    // Handle stat changes
+    const statChanges = parseStatChanges(move);
+    const statTarget = getMoveStatTarget(move);
+
+    for (const { stat, stages } of statChanges) {
+      let targetName: string;
+      let targetIndex: number;
+      let applyStatFn: (index: number, stat: keyof StatStages, stages: number) => { actualChange: number; maxedOut: boolean };
+
+      if (statTarget === 'user') {
+        targetName = attacker.name;
+        targetIndex = attackerIndex;
+        applyStatFn = isPlayerAttacker ? applyStatChangeToPlayer : applyStatChangeToCpu;
+      } else {
+        targetName = defender.name;
+        targetIndex = defenderIndex;
+        applyStatFn = isPlayerAttacker ? applyStatChangeToCpu : applyStatChangeToPlayer;
+      }
+
+      const result = applyStatFn(targetIndex, stat, stages);
+      const message = getStatChangeMessage(
+        transformName(targetName),
+        stat,
+        stages,
+        result.maxedOut
+      );
+      await showBattleMessage(message);
+    }
+
+    // Handle status condition
+    const statusEffect = getMoveStatusEffect(move);
+    if (statusEffect) {
+      const { status, chance } = statusEffect;
+      
+      if (Math.random() * 100 < chance) {
+        // Status moves target the opponent
+        if (!isImmuneToStatus(defender, status)) {
+          if (isPlayerAttacker) {
+            applyStatusToCpu(defenderIndex, status);
+          } else {
+            applyStatusToPlayer(defenderIndex, status);
+          }
+          await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
+        } else {
+          await showBattleMessage(`It doesn't affect ${transformName(defender.name)}...`);
+        }
+      }
+    }
+
+    // Handle healing moves
+    const healingPercent = getMoveHealingPercent(move);
+    if (healingPercent > 0) {
+      const healAmount = Math.floor(attacker.maxHp * (healingPercent / 100));
+      if (isPlayerAttacker) {
+        await applyHealingToPlayer(attackerIndex, healAmount);
+      } else {
+        await applyHealingToCpu(attackerIndex, healAmount);
+      }
+      await healSfx.play();
+      await showBattleMessage(`${transformName(attacker.name)} restored HP!`);
+    }
+  }, [showBattleMessage, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyHealingToPlayer, applyHealingToCpu]);
+
+  const processEndOfTurnEffects = useCallback(async (
+    pokemon: BattlePokemon,
+    index: number,
+    isPlayer: boolean
+  ): Promise<boolean> => {
+    const statusDamage = calculateStatusDamage(pokemon);
+    
+    if (statusDamage > 0) {
+      const statusName = pokemon.status === 'burn' ? 'its burn' : 'poison';
+      await showBattleMessage(`${transformName(pokemon.name)} is hurt by ${statusName}!`);
+      
+      const newHp = isPlayer 
+        ? await applyDamageToPlayer(index, statusDamage)
+        : await applyDamageToCpu(index, statusDamage);
+      
+      if (isPlayer) {
+        setPlayerDamaged(true);
+        setTimeout(() => setPlayerDamaged(false), 600);
+      } else {
+        setCpuDamaged(true);
+        setTimeout(() => setCpuDamaged(false), 600);
+      }
+      
+      await delay(600);
+      
+      if (newHp <= 0) {
+        await showBattleMessage(`${transformName(pokemon.name)} fainted!`);
+        return true;
+      }
+    }
+    
+    // Update status turns
+    updateStatusTurns(isPlayer, index);
+    
+    return false;
+  }, [showBattleMessage, applyDamageToPlayer, applyDamageToCpu, updateStatusTurns]);
+
   const performAttack = useCallback(async (
     attacker: BattlePokemon,
+    attackerIndex: number,
     defenderIndex: number,
     move: BattleMove,
     isPlayerAttacker: boolean
@@ -305,28 +496,105 @@ export function useBattle(
 
     if (!defender) return { damage: 0, fainted: false };
 
+    // Check if attacker can move (status conditions)
+    const { canMove, reason } = canPokemonMove(attacker);
+    
+    if (!canMove && reason) {
+      // Handle status preventing movement
+      if (reason === 'sleep') {
+        await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        updateStatusTurns(isPlayerAttacker, attackerIndex);
+        
+        // Check if woke up
+        const updatedAttacker = isPlayerAttacker 
+          ? playerTeamRef.current[attackerIndex]
+          : cpuTeamRef.current[attackerIndex];
+        if (updatedAttacker && updatedAttacker.status === null) {
+          await showBattleMessage(getStatusCuredMessage(transformName(attacker.name), 'sleep'));
+        }
+        await hideMessage();
+        return { damage: 0, fainted: false };
+      }
+      
+      if (reason === 'freeze') {
+        await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        await hideMessage();
+        return { damage: 0, fainted: false };
+      }
+      
+      if (reason === 'paralysis') {
+        await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        await hideMessage();
+        return { damage: 0, fainted: false };
+      }
+      
+      if (reason === 'confusion') {
+        await showBattleMessage(`${transformName(attacker.name)} is confused!`);
+        await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        
+        // Deal confusion damage to self
+        const confusionDamage = calculateConfusionDamage(attacker);
+        if (isPlayerAttacker) {
+          setPlayerDamaged(true);
+          setTimeout(() => setPlayerDamaged(false), 600);
+          const newHp = await applyDamageToPlayer(attackerIndex, confusionDamage);
+          if (newHp <= 0) {
+            await showBattleMessage(`${transformName(attacker.name)} fainted!`);
+            await hideMessage();
+            return { damage: 0, fainted: false }; // Attacker fainted, handled separately
+          }
+        } else {
+          setCpuDamaged(true);
+          setTimeout(() => setCpuDamaged(false), 600);
+          const newHp = await applyDamageToCpu(attackerIndex, confusionDamage);
+          if (newHp <= 0) {
+            await showBattleMessage(`${transformName(attacker.name)} fainted!`);
+            await hideMessage();
+            return { damage: 0, fainted: false };
+          }
+        }
+        
+        await hideMessage();
+        return { damage: 0, fainted: false };
+      }
+      
+      if (reason === 'flinch') {
+        await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        clearVolatileCondition(isPlayerAttacker, attackerIndex, 'flinch');
+        await hideMessage();
+        return { damage: 0, fainted: false };
+      }
+    }
+
     await showBattleMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
 
-    if (!checkAccuracy(move)) {
+    if (!checkAccuracy(move, attacker, defender)) {
       await showBattleMessage(`${transformName(attacker.name)}'s attack missed!`);
+      await hideMessage();
+      return { damage: 0, fainted: false };
+    }
+
+    if (isStatusMove(move)) {
+      await handleStatusMoveEffects(attacker, attackerIndex, defenderIndex, move, isPlayerAttacker);
       await hideMessage();
       return { damage: 0, fainted: false };
     }
 
     const { damage, effectiveness, isCritical, abilityEffect } = calculateDamage(attacker, defender, move);
     
-    // Handle ability immunity with all its effects
+    // Handle ability immunity
     if (abilityEffect) {
       await handleAbilityEffect(
         abilityEffect,
         defenderIndex,
         defender.name,
-        !isPlayerAttacker // defender is player if attacker is CPU
+        !isPlayerAttacker
       );
       await hideMessage();
       return { damage: 0, fainted: false };
     }
     
+    // Play sound effects
     if (effectiveness < 1) await notEffectiveSfx.play();
     else if (effectiveness > 1) await superEffectiveSfx.play();
     else await (move.damage_class.name.includes('physical') ? physicalAttackSfx.play() : specialAttackSfx.play());
@@ -364,17 +632,68 @@ export function useBattle(
 
     const effectivenessMsg = getEffectivenessMessage(effectiveness, transformName(defender.name));
     if (effectivenessMsg) await showBattleMessage(effectivenessMsg);
+
+    // Handle secondary effects (status from damaging moves)
+    const statusEffect = getMoveStatusEffect(move);
+    if (statusEffect && newHp > 0) {
+      const { status, chance } = statusEffect;
+      if (Math.random() * 100 < chance) {
+        const currentDefender = isPlayerAttacker 
+          ? cpuTeamRef.current[defenderIndex]
+          : playerTeamRef.current[defenderIndex];
+        
+        if (currentDefender && !isImmuneToStatus(currentDefender, status)) {
+          if (isPlayerAttacker) {
+            applyStatusToCpu(defenderIndex, status);
+          } else {
+            applyStatusToPlayer(defenderIndex, status);
+          }
+          await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
+        }
+      }
+    }
+
+    // Handle stat changes from damaging moves
+    const statChanges = parseStatChanges(move);
+    const statChance = move.meta?.stat_chance || 100;
     
-    // Use the actual new HP from state update to determine faint
+    if (statChanges.length > 0 && Math.random() * 100 < statChance) {
+      const statTarget = getMoveStatTarget(move);
+      
+      for (const { stat, stages } of statChanges) {
+        let targetName: string;
+        let targetIndex: number;
+        let applyStatFn: (index: number, stat: keyof StatStages, stages: number) => { actualChange: number; maxedOut: boolean };
+
+        if (statTarget === 'user') {
+          targetName = attacker.name;
+          targetIndex = attackerIndex;
+          applyStatFn = isPlayerAttacker ? applyStatChangeToPlayer : applyStatChangeToCpu;
+        } else {
+          targetName = defender.name;
+          targetIndex = defenderIndex;
+          applyStatFn = isPlayerAttacker ? applyStatChangeToCpu : applyStatChangeToPlayer;
+        }
+
+        const result = applyStatFn(targetIndex, stat, stages);
+        const message = getStatChangeMessage(
+          transformName(targetName),
+          stat,
+          stages,
+          result.maxedOut
+        );
+        await showBattleMessage(message);
+      }
+    }
+    
     const fainted = newHp <= 0;
     if (fainted) await showBattleMessage(`${transformName(defender.name)} fainted!`);
 
     await hideMessage();
     return { damage, fainted };
-  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, handleAbilityEffect]);
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
-    // Re-read current team state from refs
     const team = isPlayerFainted ? playerTeamRef.current : cpuTeamRef.current;
     
     if (isTeamWiped(team)) {
@@ -387,6 +706,36 @@ export function useBattle(
       setForcedSwitch('player');
       return false;
     } else {
+      // CPU's Pokemon fainted - prompt player if they want to switch
+      const hasAlternative = playerTeamRef.current.some((p, i) => 
+        i !== activePlayerIndexRef.current && p.currentHp > 0
+      );
+      
+      if (hasAlternative) {
+        setSwitchPrompt(true);
+        return false;
+      } else {
+        // Player has no alternatives, CPU sends out next
+        const currentCpuIndex = activeCpuIndexRef.current;
+        const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
+        if (nextIndex >= 0) {
+          await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
+          await hideMessage();
+          setActiveCpuIndex(nextIndex);
+        }
+        return false;
+      }
+    }
+  }, [isTeamWiped, setActiveCpuIndex, showBattleMessage, hideMessage]);
+
+  const handleSwitchPromptResponse = useCallback(async (wantsToSwitch: boolean) => {
+    setSwitchPrompt(false);
+    
+    if (wantsToSwitch) {
+      // Player will select a Pokemon to switch to
+      setForcedSwitch('player');
+    } else {
+      // Player stays, CPU sends out next Pokemon
       const currentCpuIndex = activeCpuIndexRef.current;
       const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
       if (nextIndex >= 0) {
@@ -394,9 +743,10 @@ export function useBattle(
         await hideMessage();
         setActiveCpuIndex(nextIndex);
       }
-      return false;
     }
-  }, [isTeamWiped, setActiveCpuIndex, showBattleMessage, hideMessage]);
+    
+    setIsProcessing(false);
+  }, [setActiveCpuIndex, showBattleMessage, hideMessage]);
 
   const executeTurn = useCallback(async (playerMove: BattleMove) => {
     const player = playerTeamRef.current[activePlayerIndexRef.current];
@@ -411,7 +761,6 @@ export function useBattle(
       decrementMovePp(true, playerMoveIndex);
     }
 
-    // Check if CPU wants to switch
     const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndexRef.current);
     
     if (cpuWantsToSwitch) {
@@ -419,7 +768,7 @@ export function useBattle(
       
       if (switchTarget >= 0) {
         // Player attacks first
-        const playerResult = await performAttack(player, activeCpuIndexRef.current, playerMove, true);
+        const playerResult = await performAttack(player, activePlayerIndexRef.current, activeCpuIndexRef.current, playerMove, true);
         
         if (playerResult.fainted) {
           const battleOver = await handleFaintedPokemon(false);
@@ -427,6 +776,8 @@ export function useBattle(
             setIsProcessing(false);
             return;
           }
+          // Wait for switch prompt response
+          return;
         } else {
           // CPU switches
           await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
@@ -456,11 +807,11 @@ export function useBattle(
       decrementMovePp(false, cpuMoveIndex);
     }
 
-    const playerGoesFirst = determineFirstAttacker(player, cpu) === 'pokemon1';
+    const playerGoesFirst = determineFirstAttacker(player, cpu, playerMove.priority, cpuMove.priority) === 'pokemon1';
 
     if (playerGoesFirst) {
       // Player attacks CPU
-      const firstResult = await performAttack(player, activeCpuIndexRef.current, playerMove, true);
+      const firstResult = await performAttack(player, activePlayerIndexRef.current, activeCpuIndexRef.current, playerMove, true);
 
       if (firstResult.fainted) {
         const battleOver = await handleFaintedPokemon(false);
@@ -468,8 +819,7 @@ export function useBattle(
           setIsProcessing(false);
           return;
         }
-        // CPU fainted and was replaced, turn ends
-        setIsProcessing(false);
+        // Wait for switch prompt
         return;
       }
 
@@ -478,14 +828,43 @@ export function useBattle(
       // CPU attacks player - re-read current CPU from refs (in case index changed)
       const currentCpu = cpuTeamRef.current[activeCpuIndexRef.current];
       if (currentCpu && currentCpu.currentHp > 0) {
-        const secondResult = await performAttack(currentCpu, activePlayerIndexRef.current, cpuMove, false);
+        const secondResult = await performAttack(currentCpu, activeCpuIndexRef.current, activePlayerIndexRef.current, cpuMove, false);
         if (secondResult.fainted) {
-          await handleFaintedPokemon(true);
+          const battleOver = await handleFaintedPokemon(true);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+        }
+      }
+      
+      // End of turn effects
+      const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
+      const currentCpuAfter = cpuTeamRef.current[activeCpuIndexRef.current];
+      
+      if (currentPlayer && currentPlayer.currentHp > 0) {
+        const playerFainted = await processEndOfTurnEffects(currentPlayer, activePlayerIndexRef.current, true);
+        if (playerFainted) {
+          const battleOver = await handleFaintedPokemon(true);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+        }
+      }
+      
+      if (currentCpuAfter && currentCpuAfter.currentHp > 0) {
+        const cpuFainted = await processEndOfTurnEffects(currentCpuAfter, activeCpuIndexRef.current, false);
+        if (cpuFainted) {
+          const battleOver = await handleFaintedPokemon(false);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
         }
       }
     } else {
-      // CPU attacks player first
-      const firstResult = await performAttack(cpu, activePlayerIndexRef.current, cpuMove, false);
+      const firstResult = await performAttack(cpu, activeCpuIndexRef.current, activePlayerIndexRef.current, cpuMove, false);
 
       if (firstResult.fainted) {
         const battleOver = await handleFaintedPokemon(true);
@@ -493,25 +872,53 @@ export function useBattle(
           setIsProcessing(false);
           return;
         }
-        // Player fainted, needs to switch, turn ends
-        setIsProcessing(false);
         return;
       }
 
       await delay(600);
 
-      // Player attacks CPU
       const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
       if (currentPlayer && currentPlayer.currentHp > 0) {
-        const secondResult = await performAttack(currentPlayer, activeCpuIndexRef.current, playerMove, true);
+        const secondResult = await performAttack(currentPlayer, activePlayerIndexRef.current, activeCpuIndexRef.current, playerMove, true);
         if (secondResult.fainted) {
-          await handleFaintedPokemon(false);
+          const battleOver = await handleFaintedPokemon(false);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+          return;
+        }
+      }
+      
+      // End of turn effects
+      const playerAfter = playerTeamRef.current[activePlayerIndexRef.current];
+      const cpuAfter = cpuTeamRef.current[activeCpuIndexRef.current];
+      
+      if (cpuAfter && cpuAfter.currentHp > 0) {
+        const cpuFainted = await processEndOfTurnEffects(cpuAfter, activeCpuIndexRef.current, false);
+        if (cpuFainted) {
+          const battleOver = await handleFaintedPokemon(false);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+        }
+      }
+      
+      if (playerAfter && playerAfter.currentHp > 0) {
+        const playerFainted = await processEndOfTurnEffects(playerAfter, activePlayerIndexRef.current, true);
+        if (playerFainted) {
+          const battleOver = await handleFaintedPokemon(true);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
         }
       }
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp, processEndOfTurnEffects]);
 
   const executePlayerSwitch = useCallback(async (newIndex: number) => {
     if (isProcessing && forcedSwitch !== 'player') return;
@@ -520,14 +927,17 @@ export function useBattle(
 
     const isForcedSwitch = forcedSwitch === 'player';
     const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
+    const wasSwitchPrompt = switchPrompt;
     
-    if (!isForcedSwitch && currentPlayer) {
+    setForcedSwitch(null);
+    setSwitchPrompt(false);
+    
+    if (!isForcedSwitch && !wasSwitchPrompt && currentPlayer) {
       await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       await hideMessage();
 
-      // CPU gets to act after player switches
       const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
       if (cpu && cpu.currentHp > 0) {
         const cpuWantsToSwitch = shouldCpuSwitch(cpu, cpuTeamRef.current, activeCpuIndexRef.current);
@@ -547,8 +957,7 @@ export function useBattle(
             if (cpuMoveIndex >= 0) {
               decrementMovePp(false, cpuMoveIndex);
             }
-            // Attack the newly switched-in Pokemon using newIndex
-            const result = await performAttack(cpu, newIndex, cpuMove, false);
+            const result = await performAttack(cpu, activeCpuIndexRef.current, newIndex, cpuMove, false);
             
             if (result.fainted) {
               await handleFaintedPokemon(true);
@@ -556,16 +965,29 @@ export function useBattle(
           }
         }
       }
+    } else if (wasSwitchPrompt) {
+      // Player chose to switch after KO'ing opponent's Pokemon
+      await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
+      setActivePlayerIndex(newIndex);
+      await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
+      
+      // Now CPU sends out their next Pokemon
+      const currentCpuIndex = activeCpuIndexRef.current;
+      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
+      if (nextIndex >= 0) {
+        await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
+        setActiveCpuIndex(nextIndex);
+      }
+      await hideMessage();
     } else {
-      // Forced switch after fainting
-      setForcedSwitch(null);
+      // Forced switch after player's Pokemon fainted
       setActivePlayerIndex(newIndex);
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       await hideMessage();
     }
 
     setIsProcessing(false);
-  }, [isProcessing, forcedSwitch, setActivePlayerIndex, setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, decrementMovePp]);
+  }, [isProcessing, forcedSwitch, switchPrompt, setActivePlayerIndex, setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, decrementMovePp]);
 
   const useItemAndEndTurn = useCallback(async (itemName: string, healAmount: number) => {
     const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
@@ -604,8 +1026,7 @@ export function useBattle(
       decrementMovePp(false, cpuMoveIndex);
     }
 
-    // Attack player at their current active index - performAttack reads fresh HP from ref
-    const result = await performAttack(cpu, activePlayerIndexRef.current, cpuMove, false);
+    const result = await performAttack(cpu, activeCpuIndexRef.current, activePlayerIndexRef.current, cpuMove, false);
 
     if (result.fainted) await handleFaintedPokemon(true);
 
@@ -644,6 +1065,7 @@ export function useBattle(
     setWinner(null);
     setIsProcessing(false);
     setForcedSwitch(null);
+    setSwitchPrompt(false);
   }, []);
   
   return {
@@ -657,10 +1079,12 @@ export function useBattle(
     winner,
     isProcessing,
     forcedSwitch,
+    switchPrompt,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,
     handleRun,
+    handleSwitchPromptResponse,
     resetBattle
   };
 }
