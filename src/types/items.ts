@@ -3,11 +3,14 @@ export interface Item {
   name: string;
   description: string;
   quantity: number;
-  type: 'healing' | 'revive' | 'battle' | 'status';
+  type: 'healing' | 'revive' | 'status' | 'pp-restore';
   effect?: {
     heal?: number;
     revive?: boolean;
     statusCure?: string[];
+    ppRestore?: number;
+    ppRestoreAll?: boolean;
+    ppRestoreFull?: boolean;
   };
 }
 
@@ -59,5 +62,37 @@ export const STARTER_ITEMS: Item[] = [
     quantity: 1,
     type: 'revive',
     effect: { revive: true }
+  },
+  {
+    id: 'ether',
+    name: 'Ether',
+    description: 'Restores 10 PP to one move',
+    quantity: 3,
+    type: 'pp-restore',
+    effect: { ppRestore: 10 }
+  },
+  {
+    id: 'max-ether',
+    name: 'Max Ether',
+    description: 'Fully restores PP to one move',
+    quantity: 2,
+    type: 'pp-restore',
+    effect: { ppRestoreFull: true }
+  },
+  {
+    id: 'elixir',
+    name: 'Elixir',
+    description: 'Restores 10 PP to all moves',
+    quantity: 2,
+    type: 'pp-restore',
+    effect: { ppRestore: 10, ppRestoreAll: true }
+  },
+  {
+    id: 'max-elixir',
+    name: 'Max Elixir',
+    description: 'Fully restores PP to all moves',
+    quantity: 1,
+    type: 'pp-restore',
+    effect: { ppRestoreFull: true, ppRestoreAll: true }
   }
 ];

@@ -14,8 +14,18 @@ import { Item } from '../../types/items';
 import { getRandomMoves } from '../../services/pokeApi';
 import { BattleLog } from '../battle/BattleLog';
 import { createDefaultStatStages } from '../../utils/battleCalculations';
+import { typeColors } from '../../utils/typeEffectiveness';
+import clsx from 'clsx';
 
-type MenuState = 'action' | 'moves' | 'bag' | 'pokemon' | 'bag-target-heal' | 'bag-target-revive';
+type MenuState = 
+  | 'action' 
+  | 'moves' 
+  | 'bag' 
+  | 'pokemon' 
+  | 'bag-target-heal' 
+  | 'bag-target-revive'
+  | 'bag-target-pp-pokemon'
+  | 'bag-target-pp-move';
 
 export function BattleScreen() {
   const navigate = useNavigate();
@@ -37,6 +47,7 @@ export function BattleScreen() {
   const [isResetting, setIsResetting] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [pendingItem, setPendingItem] = useState<Item | null>(null);
+  const [pendingPpTargetIndex, setPendingPpTargetIndex] = useState<number | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -68,14 +79,14 @@ export function BattleScreen() {
     if (!audioRef.current) {
       audioRef.current = new Audio('/src/assets/sounds/battle.mp3');
       audioRef.current.loop = true;
-      audioRef.current.volume = 0.5; // 50% volume
+      audioRef.current.volume = 0.5;
     }
 
     const battleMusic = audioRef.current;
 
     const playMusic = async () => {
       try {
-        battleMusic.currentTime = 0; // Reset audio to beginning to prevent overlapping
+        battleMusic.currentTime = 0;
         await battleMusic.play();
       } catch (e) {
         console.log('Audio play failed:', e);
@@ -83,7 +94,6 @@ export function BattleScreen() {
     };
     playMusic();
 
-    // Cleanup
     return () => {
       if (battleMusic) {
         battleMusic.pause();
@@ -179,7 +189,6 @@ export function BattleScreen() {
     if (isProcessing) return;
 
     if (item.type === 'healing') {
-      // Check for injured Pokémon
       const injuredPokemon = localPlayerTeam.filter(p => p.currentHp > 0 && p.currentHp < p.maxHp);
       
       if (injuredPokemon.length === 0) return;
@@ -209,6 +218,16 @@ export function BattleScreen() {
           applyReviveItem(item, faintedIndex);
         }
       }
+    } else if (item.type === 'pp-restore') {
+      // Check if any Pokemon has moves with reduced PP
+      const pokemonWithReducedPp = localPlayerTeam.filter(p => 
+        p.currentHp > 0 && p.selectedMoves.some(m => m.currentPp < m.maxPp)
+      );
+      
+      if (pokemonWithReducedPp.length === 0) return;
+
+      setPendingItem(item);
+      setMenuState('bag-target-pp-pokemon');
     }
   };
 
@@ -266,6 +285,99 @@ export function BattleScreen() {
     setMenuState('action');
   };
 
+  const handlePpPokemonSelect = (index: number) => {
+    if (!pendingItem) return;
+    
+    const isElixir = pendingItem.effect?.ppRestoreAll;
+    
+    if (isElixir) {
+      // Elixir restores all moves - apply directly
+      applyPpRestoreToAllMoves(pendingItem, index);
+    } else {
+      // Ether restores single move - need to select which move
+      setPendingPpTargetIndex(index);
+      setMenuState('bag-target-pp-move');
+    }
+  };
+
+  const handlePpMoveSelect = (moveIndex: number) => {
+    if (!pendingItem || pendingPpTargetIndex === null) return;
+    applyPpRestoreToMove(pendingItem, pendingPpTargetIndex, moveIndex);
+  };
+
+  const applyPpRestoreToMove = async (item: Item, pokemonIndex: number, moveIndex: number) => {
+    const target = localPlayerTeam[pokemonIndex];
+    if (!target) return;
+
+    const move = target.selectedMoves[moveIndex];
+    if (!move || move.currentPp >= move.maxPp) return;
+
+    const restoreAmount = item.effect?.ppRestoreFull 
+      ? move.maxPp - move.currentPp
+      : Math.min(item.effect?.ppRestore || 10, move.maxPp - move.currentPp);
+
+    if (restoreAmount > 0) {
+      setLocalPlayerTeam(prev => {
+        return prev.map((p, i) => {
+          if (i === pokemonIndex) {
+            return {
+              ...p,
+              selectedMoves: p.selectedMoves.map((m, mi) => {
+                if (mi === moveIndex) {
+                  return { ...m, currentPp: Math.min(m.maxPp, m.currentPp + restoreAmount) };
+                }
+                return m;
+              })
+            };
+          }
+          return p;
+        });
+      });
+      useItem(item.id);
+      useItemAndEndTurn(item.name, restoreAmount);
+      setPendingItem(null);
+      setPendingPpTargetIndex(null);
+      setMenuState('action');
+    }
+  };
+
+  const applyPpRestoreToAllMoves = async (item: Item, pokemonIndex: number) => {
+    const target = localPlayerTeam[pokemonIndex];
+    if (!target) return;
+
+    let totalRestored = 0;
+
+    setLocalPlayerTeam(prev => {
+      return prev.map((p, i) => {
+        if (i === pokemonIndex) {
+          return {
+            ...p,
+            selectedMoves: p.selectedMoves.map(m => {
+              if (m.currentPp < m.maxPp) {
+                const restoreAmount = item.effect?.ppRestoreFull 
+                  ? m.maxPp - m.currentPp
+                  : Math.min(item.effect?.ppRestore || 10, m.maxPp - m.currentPp);
+                totalRestored += restoreAmount;
+                return { ...m, currentPp: Math.min(m.maxPp, m.currentPp + restoreAmount) };
+              }
+              return m;
+            })
+          };
+        }
+        return p;
+      });
+    });
+
+    if (totalRestored > 0) {
+      useItem(item.id);
+      useItemAndEndTurn(item.name, totalRestored);
+    }
+    
+    setPendingItem(null);
+    setPendingPpTargetIndex(null);
+    setMenuState('action');
+  };
+
   const handleHealTargetSelect = (index: number) => {
     if (pendingItem) {
       applyHealingItem(pendingItem, index);
@@ -320,6 +432,7 @@ export function BattleScreen() {
       resetBattle();
       setMenuState('action');
       setPendingItem(null);
+      setPendingPpTargetIndex(null);
       setInitialized(true);
     } catch (error) {
       console.error('Failed to reset battle:', error);
@@ -471,6 +584,31 @@ export function BattleScreen() {
                   }}
                 />
               )}
+
+              {!showForcedSwitch && menuState === 'bag-target-pp-pokemon' && (
+                <PpPokemonTargetMenu
+                  team={localPlayerTeam}
+                  itemName={pendingItem?.name || ''}
+                  onSelect={handlePpPokemonSelect}
+                  onBack={() => {
+                    setPendingItem(null);
+                    setMenuState('bag');
+                  }}
+                />
+              )}
+
+              {!showForcedSwitch && menuState === 'bag-target-pp-move' && pendingPpTargetIndex !== null && (
+                <PpMoveTargetMenu
+                  pokemon={localPlayerTeam[pendingPpTargetIndex]}
+                  isFullRestore={pendingItem?.effect?.ppRestoreFull || false}
+                  restoreAmount={pendingItem?.effect?.ppRestore || 10}
+                  onSelect={handlePpMoveSelect}
+                  onBack={() => {
+                    setPendingPpTargetIndex(null);
+                    setMenuState('bag-target-pp-pokemon');
+                  }}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -558,11 +696,12 @@ function ItemTargetMenu({ team, mode, itemName, onSelect, onBack }: ItemTargetMe
           {eligiblePokemon.map(({ pokemon, index }) => (
             <motion.button
               key={`${pokemon.id}-${index}`}
-              className={`w-full p-2.5 rounded-lg border-2 flex items-center gap-3 transition-all duration-200
-                ${mode === 'heal' 
+              className={clsx(
+                'w-full p-2.5 rounded-lg border-2 flex items-center gap-3 transition-all duration-200',
+                mode === 'heal' 
                   ? 'bg-gradient-to-r from-green-900/20 to-green-800/20 border-green-500/30 hover:border-green-500/60' 
                   : 'bg-gradient-to-r from-yellow-900/20 to-yellow-800/20 border-yellow-500/30 hover:border-yellow-500/60'
-                }`}
+              )}
               onClick={() => onSelect(index)}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
@@ -570,7 +709,7 @@ function ItemTargetMenu({ team, mode, itemName, onSelect, onBack }: ItemTargetMe
               <img
                 src={pokemon.sprites.other.home.front_default || pokemon.sprites.front_default}
                 alt={pokemon.name}
-                className={`w-10 h-10 object-contain ${mode === 'revive' ? 'grayscale' : ''}`}
+                className={clsx('w-10 h-10 object-contain', mode === 'revive' && 'grayscale')}
               />
               <div className="flex-1 text-left">
                 <div className="flex items-baseline gap-2">
@@ -584,11 +723,12 @@ function ItemTargetMenu({ team, mode, itemName, onSelect, onBack }: ItemTargetMe
                 <div className="flex items-center gap-2 mt-1">
                   <div className="flex-1 h-2 bg-black/50 rounded-full overflow-hidden">
                     <div 
-                      className={`h-full rounded-full ${
+                      className={clsx(
+                        'h-full rounded-full',
                         mode === 'revive' ? 'bg-red-500' : 
                         (pokemon.currentHp / pokemon.maxHp) > 0.5 ? 'bg-green-500' : 
                         (pokemon.currentHp / pokemon.maxHp) > 0.2 ? 'bg-yellow-500' : 'bg-red-500'
-                      }`}
+                      )}
                       style={{ width: `${Math.max(0, (pokemon.currentHp / pokemon.maxHp) * 100)}%` }}
                     />
                   </div>
@@ -599,6 +739,170 @@ function ItemTargetMenu({ team, mode, itemName, onSelect, onBack }: ItemTargetMe
               </div>
             </motion.button>
           ))}
+        </div>
+      </div>
+
+      <GlassButton
+        variant="gray"
+        className="w-full bg-tekken-panel/60"
+        size="small"
+        onClick={onBack}
+      >
+        ← Back
+      </GlassButton>
+    </motion.div>
+  );
+}
+
+// ============ PP Pokemon Target Selection Component ============
+
+interface PpPokemonTargetMenuProps {
+  team: BattlePokemon[];
+  itemName: string;
+  onSelect: (index: number) => void;
+  onBack: () => void;
+}
+
+function PpPokemonTargetMenu({ team, itemName, onSelect, onBack }: PpPokemonTargetMenuProps) {
+  const eligiblePokemon = team.map((p, i) => ({ pokemon: p, index: i })).filter(({ pokemon }) => {
+    return pokemon.currentHp > 0 && pokemon.selectedMoves.some(m => m.currentPp < m.maxPp);
+  });
+
+  return (
+    <motion.div
+      className="w-full md:w-96 space-y-3"
+      initial={{ x: 50, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-3">
+        <p className="font-rajdhani text-sm text-gray-300 mb-3 text-center">
+          Use <span className="text-indigo-400 font-semibold">{itemName}</span> on which Pokémon?
+        </p>
+        <div className="space-y-2 max-h-40 md:max-h-80 overflow-y-auto scrollbar-thin">
+          {eligiblePokemon.length === 0 ? (
+            <p className="text-gray-500 text-center font-rajdhani py-4">
+              No Pokémon need PP restored
+            </p>
+          ) : (
+            eligiblePokemon.map(({ pokemon, index }) => {
+              const movesNeedingPp = pokemon.selectedMoves.filter(m => m.currentPp < m.maxPp).length;
+              return (
+                <motion.button
+                  key={`${pokemon.id}-${index}`}
+                  className="w-full p-2.5 rounded-lg border-2 flex items-center gap-3 transition-all duration-200 bg-gradient-to-r from-indigo-900/20 to-purple-800/20 border-indigo-500/30 hover:border-indigo-500/60"
+                  onClick={() => onSelect(index)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                >
+                  <img
+                    src={pokemon.sprites.other.home.front_default || pokemon.sprites.front_default}
+                    alt={pokemon.name}
+                    className="w-10 h-10 object-contain"
+                  />
+                  <div className="flex-1 text-left">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-orbitron text-sm font-semibold text-white capitalize">
+                        {pokemon.name}
+                      </span>
+                      <span className="font-rajdhani text-xs text-gray-400">
+                        Lv.{pokemon.level}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-rajdhani text-xs text-indigo-300">
+                        ✨ {movesNeedingPp} move{movesNeedingPp > 1 ? 's' : ''} need{movesNeedingPp === 1 ? 's' : ''} PP
+                      </span>
+                    </div>
+                  </div>
+                </motion.button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <GlassButton
+        variant="gray"
+        className="w-full bg-tekken-panel/60"
+        size="small"
+        onClick={onBack}
+      >
+        ← Back
+      </GlassButton>
+    </motion.div>
+  );
+}
+
+// ============ PP Move Target Selection Component ============
+
+interface PpMoveTargetMenuProps {
+  pokemon: BattlePokemon;
+  isFullRestore: boolean;
+  restoreAmount: number;
+  onSelect: (moveIndex: number) => void;
+  onBack: () => void;
+}
+
+function PpMoveTargetMenu({ pokemon, isFullRestore, restoreAmount, onSelect, onBack }: PpMoveTargetMenuProps) {
+  const eligibleMoves = pokemon.selectedMoves.map((m, i) => ({ move: m, index: i })).filter(({ move }) => {
+    return move.currentPp < move.maxPp;
+  });
+
+  return (
+    <motion.div
+      className="w-full md:w-96 space-y-3"
+      initial={{ x: 50, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-3">
+        <p className="font-rajdhani text-sm text-gray-300 mb-3 text-center">
+          Restore PP to which move?
+        </p>
+        <div className="space-y-2 max-h-40 md:max-h-80 overflow-y-auto scrollbar-thin">
+          {eligibleMoves.length === 0 ? (
+            <p className="text-gray-500 text-center font-rajdhani py-4">
+              All moves have full PP
+            </p>
+          ) : (
+            eligibleMoves.map(({ move, index }) => {
+              const typeColor = typeColors[move.type.name] || '#888';
+              const ppToRestore = isFullRestore 
+                ? move.maxPp - move.currentPp 
+                : Math.min(restoreAmount, move.maxPp - move.currentPp);
+              
+              return (
+                <motion.button
+                  key={`${move.id}-${index}`}
+                  className="w-full p-2.5 rounded-lg border-2 flex items-center gap-3 transition-all duration-200 bg-gradient-to-r from-indigo-900/20 to-purple-800/20 border-indigo-500/30 hover:border-indigo-500/60"
+                  onClick={() => onSelect(index)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                >
+                  <span 
+                    className="px-2 py-1 rounded text-xs font-bold uppercase text-white"
+                    style={{ backgroundColor: typeColor }}
+                  >
+                    {move.type.name}
+                  </span>
+                  <div className="flex-1 text-left">
+                    <span className="font-orbitron text-sm font-semibold text-white capitalize">
+                      {move.name.split('-').join(' ')}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-orbitron text-xs text-gray-300">
+                      {move.currentPp}/{move.maxPp} PP
+                    </div>
+                    <div className="font-rajdhani text-xs text-indigo-400">
+                      +{ppToRestore} PP
+                    </div>
+                  </div>
+                </motion.button>
+              );
+            })
+          )}
         </div>
       </div>
 
