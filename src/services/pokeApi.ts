@@ -63,7 +63,7 @@ export const getRandomMoves = async (pokemon: Pokemon, count: number = 4): Promi
   
   const statusMoves = moves.filter((m): m is Move => 
     m !== null && m.damage_class.name === 'status' && 
-    (m.stat_changes.length > 0 || (m.meta && m.meta.ailment && m.meta.ailment.name !== 'none'))
+    (m.stat_changes.length > 0 || (m.meta !== null && m.meta.ailment.name !== 'none'))
   );
   
   // Take up to 3 damaging moves and 1 status move for variety
