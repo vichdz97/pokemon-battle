@@ -58,6 +58,7 @@ export function useBattle(
   const [isProcessing, setIsProcessing] = useState(false);
   const [forcedSwitch, setForcedSwitch] = useState<'player' | 'cpu' | null>(null);
   const [switchPrompt, setSwitchPrompt] = useState(false);
+  const [pendingCpuSwitchIndex, setPendingCpuSwitchIndex] = useState<number | null>(null);
 
   const playerTeamRef = useRef(playerTeam);
   const cpuTeamRef = useRef(cpuTeam);
@@ -706,18 +707,21 @@ export function useBattle(
       setForcedSwitch('player');
       return false;
     } else {
-      // CPU's Pokemon fainted - prompt player if they want to switch
       const hasAlternative = playerTeamRef.current.some((p, i) => 
         i !== activePlayerIndexRef.current && p.currentHp > 0
       );
       
-      if (hasAlternative) {
+      // Select CPU's next Pokemon first, regardless of whether player can switch
+      const currentCpuIndex = activeCpuIndexRef.current;
+      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
+
+      if (hasAlternative && nextIndex >= 0) {
+        // Store the pending switch so we know who's coming out
+        setPendingCpuSwitchIndex(nextIndex);
         setSwitchPrompt(true);
         return false;
       } else {
-        // Player has no alternatives, CPU sends out next
-        const currentCpuIndex = activeCpuIndexRef.current;
-        const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
+        // Player has no alternatives, CPU sends out next immediately
         if (nextIndex >= 0) {
           await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
           await hideMessage();
@@ -732,21 +736,23 @@ export function useBattle(
     setSwitchPrompt(false);
     
     if (wantsToSwitch) {
-      // Player will select a Pokemon to switch to
+      // Player wants to switch - keep pendingCpuSwitchIndex for executePlayerSwitch to use
       setForcedSwitch('player');
     } else {
-      // Player stays, CPU sends out next Pokemon
-      const currentCpuIndex = activeCpuIndexRef.current;
-      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
-      if (nextIndex >= 0) {
-        await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
+      // Player staying - send out CPU's Pokemon now and clear the pending index
+      const nextCpuIndex = pendingCpuSwitchIndex;
+      setPendingCpuSwitchIndex(null);
+      
+      if (nextCpuIndex !== null && nextCpuIndex >= 0) {
+        await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextCpuIndex].name)}!`);
         await hideMessage();
-        setActiveCpuIndex(nextIndex);
+        setActiveCpuIndex(nextCpuIndex);
       }
     }
     
     setIsProcessing(false);
-  }, [setActiveCpuIndex, showBattleMessage, hideMessage]);
+  }, [pendingCpuSwitchIndex, setActiveCpuIndex, showBattleMessage, hideMessage]);
+
 
   const executeTurn = useCallback(async (playerMove: BattleMove) => {
     const player = playerTeamRef.current[activePlayerIndexRef.current];
@@ -927,12 +933,19 @@ export function useBattle(
 
     const isForcedSwitch = forcedSwitch === 'player';
     const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
-    const wasSwitchPrompt = switchPrompt;
     
+    // Check if we came from switch prompt flow by checking pendingCpuSwitchIndex
+    // (it's only set when CPU Pokemon faints and player chose to switch)
+    const nextCpuIndex = pendingCpuSwitchIndex;
+    const cameFromSwitchPrompt = nextCpuIndex !== null;
+    
+    // Clear all switch-related state
     setForcedSwitch(null);
     setSwitchPrompt(false);
+    setPendingCpuSwitchIndex(null);
     
-    if (!isForcedSwitch && !wasSwitchPrompt && currentPlayer) {
+    if (!isForcedSwitch && !cameFromSwitchPrompt && currentPlayer) {
+      // Voluntary switch - CPU still gets to attack
       await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
@@ -965,18 +978,16 @@ export function useBattle(
           }
         }
       }
-    } else if (wasSwitchPrompt) {
+    } else if (cameFromSwitchPrompt) {
       // Player chose to switch after KO'ing opponent's Pokemon
       await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       
-      // Now CPU sends out their next Pokemon
-      const currentCpuIndex = activeCpuIndexRef.current;
-      const nextIndex = selectCpuSwitchTarget(cpuTeamRef.current, currentCpuIndex);
-      if (nextIndex >= 0) {
-        await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextIndex].name)}!`);
-        setActiveCpuIndex(nextIndex);
+      // Now reveal and send out the CPU's pre-selected Pokemon
+      if (nextCpuIndex >= 0) {
+        await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextCpuIndex].name)}!`);
+        setActiveCpuIndex(nextCpuIndex);
       }
       await hideMessage();
     } else {
@@ -987,7 +998,9 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, forcedSwitch, switchPrompt, setActivePlayerIndex, setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, decrementMovePp]);
+  }, [isProcessing, forcedSwitch, pendingCpuSwitchIndex, setActivePlayerIndex, 
+      setActiveCpuIndex, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, 
+      decrementMovePp]);
 
   const useItemAndEndTurn = useCallback(async (itemName: string, healAmount: number) => {
     const cpu = cpuTeamRef.current[activeCpuIndexRef.current];
@@ -1066,6 +1079,7 @@ export function useBattle(
     setIsProcessing(false);
     setForcedSwitch(null);
     setSwitchPrompt(false);
+    setPendingCpuSwitchIndex(null);
   }, []);
   
   return {
@@ -1080,6 +1094,7 @@ export function useBattle(
     isProcessing,
     forcedSwitch,
     switchPrompt,
+    pendingCpuSwitchIndex,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,

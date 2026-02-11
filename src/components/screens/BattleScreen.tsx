@@ -149,6 +149,7 @@ export function BattleScreen() {
     isProcessing,
     forcedSwitch,
     switchPrompt,
+    pendingCpuSwitchIndex,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,
@@ -477,6 +478,11 @@ export function BattleScreen() {
               {/* Switch Prompt Modal */}
               {switchPrompt && !showForcedSwitch && (
                 <SwitchPromptMenu
+                  incomingPokemonName={
+                    pendingCpuSwitchIndex !== null 
+                      ? localCpuTeam[pendingCpuSwitchIndex]?.name 
+                      : undefined
+                  }
                   onSwitch={() => handleSwitchPromptResponse(true)}
                   onStay={() => handleSwitchPromptResponse(false)}
                 />
@@ -641,11 +647,15 @@ export function BattleScreen() {
 // ============ Switch Prompt Menu Component ============
 
 interface SwitchPromptMenuProps {
+  incomingPokemonName?: string;
   onSwitch: () => void;
   onStay: () => void;
 }
 
-function SwitchPromptMenu({ onSwitch, onStay }: SwitchPromptMenuProps) {
+function SwitchPromptMenu({ incomingPokemonName, onSwitch, onStay }: SwitchPromptMenuProps) {
+  const formatName = (name: string) => 
+    name.split('-').map(n => n[0].toUpperCase() + n.slice(1)).join(' ');
+
   return (
     <motion.div
       className="w-full md:w-80 space-y-3"
@@ -655,26 +665,26 @@ function SwitchPromptMenu({ onSwitch, onStay }: SwitchPromptMenuProps) {
     >
       <div className="bg-tekken-panel/95 backdrop-blur-xl border border-white/10 rounded-lg p-4">
         <p className="font-rajdhani text-base text-slate-100 text-center mb-4">
-          The opponent is about to send out a new Pokémon.
+          {incomingPokemonName ? (
+            <>
+              The opponent is about to send out{' '}
+              <span className="text-tekken-gold font-semibold">
+                {formatName(incomingPokemonName)}
+              </span>
+              .
+            </>
+          ) : (
+            'The opponent is about to send out a new Pokémon.'
+          )}
           <br />
           <span className="text-tekken-gold font-semibold">Would you like to switch?</span>
         </p>
         
         <div className="flex gap-3">
-          <GlassButton
-            variant="blue"
-            size="medium"
-            className="flex-1"
-            onClick={onSwitch}
-          >
+          <GlassButton variant="blue" size="medium" className="flex-1" onClick={onSwitch}>
             Switch
           </GlassButton>
-          <GlassButton
-            variant="gray"
-            size="medium"
-            className="flex-1"
-            onClick={onStay}
-          >
+          <GlassButton variant="gray" size="medium" className="flex-1" onClick={onStay}>
             Stay
           </GlassButton>
         </div>
