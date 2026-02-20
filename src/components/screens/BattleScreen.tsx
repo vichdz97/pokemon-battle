@@ -7,6 +7,7 @@ import { ActionMenu } from '../battle/ActionMenu';
 import { MoveSelector } from '../battle/MoveSelector';
 import { BagMenu } from '../battle/BagMenu';
 import { PokemonSwitchMenu } from '../battle/PokemonSwitchMenu';
+import { AbilityToast } from '../battle/AbilityToast';
 import { useBattle } from '../../hooks/useBattle';
 import { GlassButton } from '../common/GlassButton';
 import { BattleMove, BattlePokemon } from '../../types/pokemon';
@@ -150,6 +151,7 @@ export function BattleScreen() {
     forcedSwitch,
     switchPrompt,
     pendingCpuSwitchIndex,
+    abilityToast,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,
@@ -434,6 +436,14 @@ export function BattleScreen() {
       <div className="absolute hidden md:block">
         <img src="/src/assets/images/bg.jpeg" alt="Mobile Background" className="h-screen object-cover" />
       </div>
+
+      {/* ===== ABILITY TOAST ===== */}
+      <AbilityToast
+        pokemonName={abilityToast.pokemonName}
+        abilityName={abilityToast.abilityName}
+        isPlayer={abilityToast.isPlayer}
+        visible={abilityToast.visible}
+      />
       
       {/* ===== ARENA SECTION ===== */}
       <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">

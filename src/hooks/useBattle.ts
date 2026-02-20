@@ -32,6 +32,7 @@ import { useNavigate } from 'react-router-dom';
 
 const MESSAGE_DISPLAY_TIME = 1800;
 const MESSAGE_TRANSITION_TIME = 400;
+const ABILITY_TOAST_DURATION = 2000;
 
 const healSfx = new Audio('/src/assets/sounds/heal.mp3');
 const notEffectiveSfx = new Audio('/src/assets/sounds/not-effective.mp3');
@@ -40,6 +41,13 @@ const physicalAttackSfx = new Audio('/src/assets/sounds/hit.mp3');
 const specialAttackSfx = new Audio('/src/assets/sounds/zap.mp3');
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export interface AbilityToastData {
+  pokemonName: string;
+  abilityName: string;
+  isPlayer: boolean;
+  visible: boolean;
+}
 
 export function useBattle(
   playerTeam: BattlePokemon[],
@@ -64,6 +72,14 @@ export function useBattle(
   const [forcedSwitch, setForcedSwitch] = useState<'player' | 'cpu' | null>(null);
   const [switchPrompt, setSwitchPrompt] = useState(false);
   const [pendingCpuSwitchIndex, setPendingCpuSwitchIndex] = useState<number | null>(null);
+  const [abilityToast, setAbilityToast] = useState<AbilityToastData>({
+    pokemonName: '',
+    abilityName: '',
+    isPlayer: true,
+    visible: false,
+  });
+
+  const abilityToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playerTeamRef = useRef(playerTeam);
   const cpuTeamRef = useRef(cpuTeam);
@@ -85,6 +101,34 @@ export function useBattle(
   useEffect(() => {
     activeCpuIndexRef.current = activeCpuIndex;
   }, [activeCpuIndex]);
+
+  // Clean up toast timer on unmount
+  useEffect(() => {
+    return () => {
+      if (abilityToastTimerRef.current) {
+        clearTimeout(abilityToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showAbilityToast = useCallback((pokemonName: string, abilityName: string, isPlayer: boolean) => {
+    // Clear any existing timer
+    if (abilityToastTimerRef.current) {
+      clearTimeout(abilityToastTimerRef.current);
+    }
+
+    setAbilityToast({
+      pokemonName,
+      abilityName,
+      isPlayer,
+      visible: true,
+    });
+
+    abilityToastTimerRef.current = setTimeout(() => {
+      setAbilityToast(prev => ({ ...prev, visible: false }));
+      abilityToastTimerRef.current = null;
+    }, ABILITY_TOAST_DURATION);
+  }, []);
 
   const showBattleMessage = useCallback(async (message: string) => {
     hideMessage();
@@ -262,7 +306,7 @@ export function useBattle(
           if (p.volatileConditions.includes(condition)) return p;
           let confusionTurns = p.confusionTurns;
           if (condition === 'confusion') {
-            confusionTurns = Math.floor(Math.random() * 4) + 1; // 1-4 turns
+            confusionTurns = Math.floor(Math.random() * 4) + 1;
           }
           return {
             ...p,
@@ -406,6 +450,9 @@ export function useBattle(
     defenderName: string,
     isPlayerDefender: boolean
   ) => {
+    // Show the ability toast
+    showAbilityToast(defenderName, abilityEffect.abilityName, isPlayerDefender);
+
     await showBattleMessage(`It doesn't affect ${transformName(defenderName)}...`);
 
     if (abilityEffect.healing && abilityEffect.healing > 0) {
@@ -456,7 +503,7 @@ export function useBattle(
         await showBattleMessage(`${transformName(defenderName)}'s Flash Fire is already active!`);
       }
     }
-  }, [showBattleMessage, applyHealingToPlayer, applyHealingToCpu, applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer, applyFlashFireToCpu]);
+  }, [showBattleMessage, showAbilityToast, applyHealingToPlayer, applyHealingToCpu, applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer, applyFlashFireToCpu]);
 
   const handleStatusMoveEffects = useCallback(async (
     attacker: BattlePokemon,
@@ -471,7 +518,6 @@ export function useBattle(
 
     if (!defender) return;
 
-    // Handle stat changes
     const statChanges = parseStatChanges(move);
     const statTarget = getMoveStatTarget(move);
 
@@ -558,7 +604,6 @@ export function useBattle(
     index: number,
     isPlayer: boolean
   ): Promise<boolean> => {
-    // --- Status damage (burn, poison) ---
     const statusDamage = calculateStatusDamage(pokemon);
     
     if (statusDamage > 0) {
@@ -664,7 +709,6 @@ export function useBattle(
         await showBattleMessage(`${transformName(attacker.name)} is confused!`);
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
         
-        // Deal confusion damage to self
         const confusionDamage = calculateConfusionDamage(attacker);
         if (isPlayerAttacker) {
           setPlayerDamaged(true);
@@ -981,7 +1025,6 @@ export function useBattle(
     
     setIsProcessing(false);
   }, [pendingCpuSwitchIndex, setActiveCpuIndex, showBattleMessage, hideMessage]);
-
 
   const executeTurn = useCallback(async (playerMove: BattleMove) => {
     const player = playerTeamRef.current[activePlayerIndexRef.current];
@@ -1368,6 +1411,11 @@ export function useBattle(
     setForcedSwitch(null);
     setSwitchPrompt(false);
     setPendingCpuSwitchIndex(null);
+    setAbilityToast({ pokemonName: '', abilityName: '', isPlayer: true, visible: false });
+    if (abilityToastTimerRef.current) {
+      clearTimeout(abilityToastTimerRef.current);
+      abilityToastTimerRef.current = null;
+    }
   }, []);
   
   return {
@@ -1383,6 +1431,7 @@ export function useBattle(
     forcedSwitch,
     switchPrompt,
     pendingCpuSwitchIndex,
+    abilityToast,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,
