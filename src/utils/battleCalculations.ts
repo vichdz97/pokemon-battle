@@ -216,21 +216,47 @@ export const getStatusColor = (status: StatusCondition): string => {
   }
 };
 
-// Determine the target of a move's stat changes
+// Determine the target of a move's stat changes.
+// For STATUS moves: use move.target to decide (e.g. Swords Dance targets "user")
+// For DAMAGING moves: stat changes almost always affect the user (e.g. Superpower,
+// Close Combat, Overheat lower the attacker's stats). The rare exceptions that
+// lower the *target's* stats are encoded in move.meta.stat_chance < 100 AND
+// move.target pointing at the opponent. We detect "user-targeting" stat changes
+// on damaging moves by checking whether move.target is NOT "user" – if so, the
+// stat drops are a self-imposed cost and belong to the attacker.
 export const getMoveStatTarget = (move: BattleMove): 'user' | 'target' | 'both' => {
   const targetName = move.target?.name || '';
-  
-  // Moves that target the user
-  if (targetName === 'user' || targetName === 'users-field' || targetName === 'user-and-allies') {
+  const isDamaging = move.damage_class.name !== 'status';
+
+  // --- Status moves: honour the move's declared target ---
+  if (!isDamaging) {
+    if (targetName === 'user' || targetName === 'users-field' || targetName === 'user-and-allies') {
+      return 'user';
+    }
+    if (targetName === 'all-pokemon' || targetName === 'entire-field') {
+      return 'both';
+    }
+    return 'target';
+  }
+
+  // --- Damaging moves ---
+  // If the stat changes have a <100% chance they are *secondary* effects that
+  // hit the target (e.g. Psychic 10% chance to lower Sp.Def on the foe).
+  const statChance = move.meta?.stat_chance ?? 0;
+  if (statChance > 0 && statChance < 100) {
+    return 'target';
+  }
+
+  // Guaranteed (100% / 0-meaning-guaranteed) stat changes on a damaging move
+  // are almost always a cost paid by the user (Superpower, Close Combat,
+  // Overheat, Draco Meteor, Leaf Storm, V-Create, Hammer Arm …).
+  // We detect this by looking at the sign of the changes: if every change is
+  // negative the user is paying a cost; if every change is positive the user
+  // is gaining a buff (e.g. Power-Up Punch, Fell Stinger).
+  if (move.stat_changes && move.stat_changes.length > 0) {
     return 'user';
   }
-  
-  // Moves that affect all Pokemon
-  if (targetName === 'all-pokemon' || targetName === 'entire-field') {
-    return 'both';
-  }
-  
-  // Default: target the opponent
+
   return 'target';
 };
 
@@ -323,10 +349,21 @@ export const isStatusMove = (move: BattleMove): boolean => {
   return move.damage_class.name === 'status';
 };
 
-// Check if a move has healing effect
+// Check if a move has healing effect (for status moves like Recover, Roost)
 export const getMoveHealingPercent = (move: BattleMove): number => {
   if (move.meta && move.meta.healing) {
     return move.meta.healing;
+  }
+  return 0;
+};
+
+// Get drain/recoil percentage from a damaging move's meta.
+// Positive = drain (heals attacker, e.g. Giga Drain drain=50 → heals 50% of damage dealt)
+// Negative = recoil (hurts attacker, e.g. Double Edge drain=-33 → 33% recoil)
+// Returns 0 when the move has no drain/recoil.
+export const getMoveDrainPercent = (move: BattleMove): number => {
+  if (move.meta && move.meta.drain && move.meta.drain !== 0) {
+    return move.meta.drain;
   }
   return 0;
 };

@@ -20,7 +20,8 @@ import {
   getMoveStatTarget,
   getMoveStatusEffect,
   isImmuneToStatus,
-  getMoveHealingPercent
+  getMoveHealingPercent,
+  getMoveDrainPercent
 } from '../utils/battleCalculations';
 import { getEffectivenessMessage } from '../utils/typeEffectiveness';
 import { useNavigate } from 'react-router-dom';
@@ -489,13 +490,13 @@ export function useBattle(
     defenderIndex: number,
     move: BattleMove,
     isPlayerAttacker: boolean
-  ): Promise<{ damage: number; fainted: boolean }> => {
+  ): Promise<{ damage: number; fainted: boolean; attackerFainted: boolean }> => {
     // Read the CURRENT defender from refs to get latest HP (e.g., after healing)
     const defender = isPlayerAttacker 
       ? cpuTeamRef.current[defenderIndex]
       : playerTeamRef.current[defenderIndex];
 
-    if (!defender) return { damage: 0, fainted: false };
+    if (!defender) return { damage: 0, fainted: false, attackerFainted: false };
 
     // Check if attacker can move (status conditions)
     const { canMove, reason } = canPokemonMove(attacker);
@@ -514,19 +515,19 @@ export function useBattle(
           await showBattleMessage(getStatusCuredMessage(transformName(attacker.name), 'sleep'));
         }
         await hideMessage();
-        return { damage: 0, fainted: false };
+        return { damage: 0, fainted: false, attackerFainted: false };
       }
       
       if (reason === 'freeze') {
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
         await hideMessage();
-        return { damage: 0, fainted: false };
+        return { damage: 0, fainted: false, attackerFainted: false };
       }
       
       if (reason === 'paralysis') {
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
         await hideMessage();
-        return { damage: 0, fainted: false };
+        return { damage: 0, fainted: false, attackerFainted: false };
       }
       
       if (reason === 'confusion') {
@@ -542,7 +543,7 @@ export function useBattle(
           if (newHp <= 0) {
             await showBattleMessage(`${transformName(attacker.name)} fainted!`);
             await hideMessage();
-            return { damage: 0, fainted: false }; // Attacker fainted, handled separately
+            return { damage: 0, fainted: false, attackerFainted: true };
           }
         } else {
           setCpuDamaged(true);
@@ -551,19 +552,19 @@ export function useBattle(
           if (newHp <= 0) {
             await showBattleMessage(`${transformName(attacker.name)} fainted!`);
             await hideMessage();
-            return { damage: 0, fainted: false };
+            return { damage: 0, fainted: false, attackerFainted: true };
           }
         }
         
         await hideMessage();
-        return { damage: 0, fainted: false };
+        return { damage: 0, fainted: false, attackerFainted: false };
       }
       
       if (reason === 'flinch') {
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
         clearVolatileCondition(isPlayerAttacker, attackerIndex, 'flinch');
         await hideMessage();
-        return { damage: 0, fainted: false };
+        return { damage: 0, fainted: false, attackerFainted: false };
       }
     }
 
@@ -572,13 +573,13 @@ export function useBattle(
     if (!checkAccuracy(move, attacker, defender)) {
       await showBattleMessage(`${transformName(attacker.name)}'s attack missed!`);
       await hideMessage();
-      return { damage: 0, fainted: false };
+      return { damage: 0, fainted: false, attackerFainted: false };
     }
 
     if (isStatusMove(move)) {
       await handleStatusMoveEffects(attacker, attackerIndex, defenderIndex, move, isPlayerAttacker);
       await hideMessage();
-      return { damage: 0, fainted: false };
+      return { damage: 0, fainted: false, attackerFainted: false };
     }
 
     const { damage, effectiveness, isCritical, abilityEffect } = calculateDamage(attacker, defender, move);
@@ -592,7 +593,7 @@ export function useBattle(
         !isPlayerAttacker
       );
       await hideMessage();
-      return { damage: 0, fainted: false };
+      return { damage: 0, fainted: false, attackerFainted: false };
     }
     
     // Play sound effects
@@ -634,6 +635,54 @@ export function useBattle(
     const effectivenessMsg = getEffectivenessMessage(effectiveness, transformName(defender.name));
     if (effectivenessMsg) await showBattleMessage(effectivenessMsg);
 
+    // ---- Drain / Recoil (meta.drain) ----
+    // Positive drain = heal attacker (Giga Drain, Drain Punch, etc.)
+    // Negative drain = recoil damage to attacker (Double Edge, Brave Bird, etc.)
+    let attackerFainted = false;
+    const drainPercent = getMoveDrainPercent(move);
+
+    if (drainPercent !== 0 && damage > 0) {
+      const drainAmount = Math.max(1, Math.floor(Math.abs(drainPercent) * damage / 100));
+
+      if (drainPercent > 0) {
+        // Drain: heal the attacker
+        const currentAttacker = isPlayerAttacker
+          ? playerTeamRef.current[attackerIndex]
+          : cpuTeamRef.current[attackerIndex];
+
+        if (currentAttacker && currentAttacker.currentHp < currentAttacker.maxHp) {
+          if (isPlayerAttacker) {
+            await applyHealingToPlayer(attackerIndex, drainAmount);
+          } else {
+            await applyHealingToCpu(attackerIndex, drainAmount);
+          }
+          await healSfx.play();
+          await showBattleMessage(`${transformName(defender.name)} had its energy drained!`);
+        }
+      } else {
+        // Recoil: damage the attacker
+        await showBattleMessage(`${transformName(attacker.name)} is damaged by recoil!`);
+
+        let attackerNewHp: number;
+        if (isPlayerAttacker) {
+          setPlayerDamaged(true);
+          setTimeout(() => setPlayerDamaged(false), 600);
+          attackerNewHp = await applyDamageToPlayer(attackerIndex, drainAmount);
+        } else {
+          setCpuDamaged(true);
+          setTimeout(() => setCpuDamaged(false), 600);
+          attackerNewHp = await applyDamageToCpu(attackerIndex, drainAmount);
+        }
+
+        await delay(600);
+
+        if (attackerNewHp <= 0) {
+          await showBattleMessage(`${transformName(attacker.name)} fainted!`);
+          attackerFainted = true;
+        }
+      }
+    }
+
     // Handle secondary effects (status from damaging moves)
     const statusEffect = getMoveStatusEffect(move);
     if (statusEffect && newHp > 0) {
@@ -667,10 +716,12 @@ export function useBattle(
         let applyStatFn: (index: number, stat: keyof StatStages, stages: number) => { actualChange: number; maxedOut: boolean };
 
         if (statTarget === 'user') {
+          // Stat changes target the attacker (e.g. Superpower, Close Combat)
           targetName = attacker.name;
           targetIndex = attackerIndex;
           applyStatFn = isPlayerAttacker ? applyStatChangeToPlayer : applyStatChangeToCpu;
         } else {
+          // Stat changes target the defender (secondary effect like Psychic lowering Sp.Def)
           targetName = defender.name;
           targetIndex = defenderIndex;
           applyStatFn = isPlayerAttacker ? applyStatChangeToCpu : applyStatChangeToPlayer;
@@ -691,8 +742,8 @@ export function useBattle(
     if (fainted) await showBattleMessage(`${transformName(defender.name)} fainted!`);
 
     await hideMessage();
-    return { damage, fainted };
-  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu]);
+    return { damage, fainted, attackerFainted };
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, applyHealingToPlayer, applyHealingToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
     const team = isPlayerFainted ? playerTeamRef.current : cpuTeamRef.current;
@@ -784,6 +835,14 @@ export function useBattle(
           }
           // Wait for switch prompt response
           return;
+        } else if (playerResult.attackerFainted) {
+          // Player's attacker fainted from recoil/confusion
+          const battleOver = await handleFaintedPokemon(true);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+          return;
         } else {
           // CPU switches
           await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
@@ -829,6 +888,18 @@ export function useBattle(
         return;
       }
 
+      // Check if the player's attacker fainted from recoil
+      if (firstResult.attackerFainted) {
+        const battleOver = await handleFaintedPokemon(true);
+        if (battleOver) {
+          setIsProcessing(false);
+          return;
+        }
+        // If player still has Pokemon, they must switch; CPU doesn't get to attack
+        // because the current player Pokemon fainted before CPU's turn.
+        return;
+      }
+
       await delay(600);
 
       // CPU attacks player - re-read current CPU from refs (in case index changed)
@@ -841,6 +912,14 @@ export function useBattle(
             setIsProcessing(false);
             return;
           }
+        } else if (secondResult.attackerFainted) {
+          // CPU fainted from recoil
+          const battleOver = await handleFaintedPokemon(false);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+          return;
         }
       }
       
@@ -881,6 +960,20 @@ export function useBattle(
         return;
       }
 
+      // Check if CPU fainted from recoil
+      if (firstResult.attackerFainted) {
+        const battleOver = await handleFaintedPokemon(false);
+        if (battleOver) {
+          setIsProcessing(false);
+          return;
+        }
+        // CPU fainted from recoil; player still gets to attack, but we need
+        // to wait for CPU switch before player's turn continues.
+        // For simplicity, skip player's attack this turn (similar to how
+        // player fainting from recoil skips CPU's attack above).
+        return;
+      }
+
       await delay(600);
 
       const currentPlayer = playerTeamRef.current[activePlayerIndexRef.current];
@@ -888,6 +981,14 @@ export function useBattle(
         const secondResult = await performAttack(currentPlayer, activePlayerIndexRef.current, activeCpuIndexRef.current, playerMove, true);
         if (secondResult.fainted) {
           const battleOver = await handleFaintedPokemon(false);
+          if (battleOver) {
+            setIsProcessing(false);
+            return;
+          }
+          return;
+        } else if (secondResult.attackerFainted) {
+          // Player fainted from recoil
+          const battleOver = await handleFaintedPokemon(true);
           if (battleOver) {
             setIsProcessing(false);
             return;
@@ -974,6 +1075,8 @@ export function useBattle(
             
             if (result.fainted) {
               await handleFaintedPokemon(true);
+            } else if (result.attackerFainted) {
+              await handleFaintedPokemon(false);
             }
           }
         }
@@ -1041,7 +1144,11 @@ export function useBattle(
 
     const result = await performAttack(cpu, activeCpuIndexRef.current, activePlayerIndexRef.current, cpuMove, false);
 
-    if (result.fainted) await handleFaintedPokemon(true);
+    if (result.fainted) {
+      await handleFaintedPokemon(true);
+    } else if (result.attackerFainted) {
+      await handleFaintedPokemon(false);
+    }
 
     setIsProcessing(false);
   }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp]);
