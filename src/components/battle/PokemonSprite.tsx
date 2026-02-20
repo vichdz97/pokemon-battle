@@ -5,7 +5,7 @@ import { getSprite } from '../../services/pokeApi';
 import { HealthBar } from '../common/HealthBar';
 import { typeColors } from '../../utils/typeEffectiveness';
 import { Pokeball } from '../common/Pokeball';
-import { getStatusAbbreviation, getStatusColor } from '../../utils/battleCalculations';
+import { getStatusAbbreviation, getStatusColor, getVolatileAbbreviation, getVolatileColor } from '../../utils/battleCalculations';
 
 interface PokemonSpriteProps {
   pokemon: BattlePokemon;
@@ -28,6 +28,11 @@ export function PokemonSprite({
   const spriteUrl = getSprite(pokemon, isPlayer);
   const statusAbbr = getStatusAbbreviation(pokemon.status);
   const statusColor = getStatusColor(pokemon.status);
+
+  // Collect displayable volatile condition badges (confusion, but not flinch)
+  const volatileBadges = pokemon.volatileConditions
+    .map(c => ({ abbr: getVolatileAbbreviation(c), color: getVolatileColor(c), condition: c }))
+    .filter(b => b.abbr !== '');
 
   return (
     <div className={clsx(
@@ -98,6 +103,16 @@ export function PokemonSprite({
                   {statusAbbr}
                 </span>
               )}
+              {/* Volatile condition badges (confusion, etc.) */}
+              {volatileBadges.map(({ abbr, color, condition }) => (
+                <span
+                  key={condition}
+                  className="px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white"
+                  style={{ backgroundColor: color }}
+                >
+                  {abbr}
+                </span>
+              ))}
             </div>
             <span className="font-orbitron text-sm text-gray-400">
               Lv.{pokemon.level}

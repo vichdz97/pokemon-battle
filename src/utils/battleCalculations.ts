@@ -1,4 +1,4 @@
-import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition } from '../types/pokemon';
+import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition, VolatileCondition } from '../types/pokemon';
 import { getTypeEffectiveness } from './typeEffectiveness';
 
 // Ability-based immunities: moveType -> list of abilities that grant immunity
@@ -151,16 +151,16 @@ export const canPokemonMove = (pokemon: BattlePokemon): { canMove: boolean; reas
     }
   }
 
+  // Check flinch (must be checked before confusion — flinch always prevents action)
+  if (pokemon.volatileConditions.includes('flinch')) {
+    return { canMove: false, reason: 'flinch' };
+  }
+
   // Check confusion (33% chance to hurt self)
   if (pokemon.volatileConditions.includes('confusion')) {
     if (pokemon.confusionTurns > 0 && Math.random() < 0.33) {
       return { canMove: false, reason: 'confusion' };
     }
-  }
-
-  // Check flinch
-  if (pokemon.volatileConditions.includes('flinch')) {
-    return { canMove: false, reason: 'flinch' };
   }
 
   return { canMove: true, reason: null };
@@ -216,6 +216,23 @@ export const getStatusColor = (status: StatusCondition): string => {
   }
 };
 
+// Get volatile condition abbreviation for display
+export const getVolatileAbbreviation = (condition: VolatileCondition): string => {
+  switch (condition) {
+    case 'confusion': return 'CNF';
+    case 'flinch': return ''; // Flinch is momentary, don't show badge
+    default: return '';
+  }
+};
+
+// Get volatile condition color for display
+export const getVolatileColor = (condition: VolatileCondition): string => {
+  switch (condition) {
+    case 'confusion': return '#F85888'; // Pink
+    default: return '#888888';
+  }
+};
+
 // Determine the target of a move's stat changes.
 // For STATUS moves: use move.target to decide (e.g. Swords Dance targets "user")
 // For DAMAGING moves: stat changes almost always affect the user (e.g. Superpower,
@@ -250,9 +267,6 @@ export const getMoveStatTarget = (move: BattleMove): 'user' | 'target' | 'both' 
   // Guaranteed (100% / 0-meaning-guaranteed) stat changes on a damaging move
   // are almost always a cost paid by the user (Superpower, Close Combat,
   // Overheat, Draco Meteor, Leaf Storm, V-Create, Hammer Arm …).
-  // We detect this by looking at the sign of the changes: if every change is
-  // negative the user is paying a cost; if every change is positive the user
-  // is gaining a buff (e.g. Power-Up Punch, Fell Stinger).
   if (move.stat_changes && move.stat_changes.length > 0) {
     return 'user';
   }
@@ -267,7 +281,6 @@ export const parseStatChanges = (move: BattleMove): { stat: keyof StatStages; st
   }
 
   return move.stat_changes.map(sc => {
-    // Map API stat names to our StatStages keys
     let statName = sc.stat.name;
     if (statName === 'special-attack') statName = 'special-attack';
     else if (statName === 'special-defense') statName = 'special-defense';
@@ -279,7 +292,7 @@ export const parseStatChanges = (move: BattleMove): { stat: keyof StatStages; st
   });
 };
 
-// Determine status condition from move meta
+// Determine non-volatile status condition from move meta (burn, paralysis, poison, sleep, freeze)
 export const getMoveStatusEffect = (move: BattleMove): { status: StatusCondition; chance: number } | null => {
   if (!move.meta || !move.meta.ailment || move.meta.ailment.name === 'none') {
     return null;
@@ -320,6 +333,37 @@ export const getMoveStatusEffect = (move: BattleMove): { status: StatusCondition
   return { status, chance };
 };
 
+// Determine volatile condition from move meta (confusion).
+// Separate from getMoveStatusEffect because volatile conditions stack alongside
+// non-volatile ones and use a different application path.
+export const getMoveVolatileEffect = (move: BattleMove): { condition: VolatileCondition; chance: number } | null => {
+  if (!move.meta || !move.meta.ailment) return null;
+
+  const ailmentName = move.meta.ailment.name;
+
+  if (ailmentName === 'confusion') {
+    let chance = move.meta.ailment_chance;
+    // Status moves with 0 ailment_chance mean 100% (e.g. Confuse Ray, Sweet Kiss)
+    if (chance === 0 && move.damage_class.name === 'status') {
+      chance = 100;
+    }
+    // Damaging moves with 0 ailment_chance but confusion ailment (shouldn't happen
+    // normally, but guard against it)
+    if (chance === 0 && move.damage_class.name !== 'status') {
+      return null;
+    }
+    return { condition: 'confusion', chance };
+  }
+
+  return null;
+};
+
+// Get the flinch chance from a damaging move (e.g. Bite 30%, Iron Head 30%, Fake Out 100%)
+export const getMoveFlinchChance = (move: BattleMove): number => {
+  if (!move.meta) return 0;
+  return move.meta.flinch_chance || 0;
+};
+
 // Check if a Pokemon is immune to a status condition
 export const isImmuneToStatus = (pokemon: BattlePokemon, status: StatusCondition): boolean => {
   // Already has a status condition (can't stack non-volatile conditions)
@@ -331,17 +375,26 @@ export const isImmuneToStatus = (pokemon: BattlePokemon, status: StatusCondition
 
   switch (status) {
     case 'burn':
-      return types.includes('fire'); // Fire types are immune to burn
+      return types.includes('fire');
     case 'paralysis':
-      return types.includes('electric'); // Electric types are immune to paralysis (Gen 6+)
+      return types.includes('electric');
     case 'poison':
     case 'badly-poisoned':
-      return types.includes('poison') || types.includes('steel'); // Poison and Steel types are immune to poison
+      return types.includes('poison') || types.includes('steel');
     case 'freeze': 
-      return types.includes('ice'); // Ice types are immune to freeze
+      return types.includes('ice');
     default:
       return false;
   }
+};
+
+// Check if a Pokemon is immune to a volatile condition
+export const isImmuneToVolatile = (pokemon: BattlePokemon, condition: VolatileCondition): boolean => {
+  // Already has this volatile condition
+  if (pokemon.volatileConditions.includes(condition)) {
+    return true;
+  }
+  return false;
 };
 
 // Check if a move is a status move (no direct damage)
@@ -395,11 +448,9 @@ export const calculateDamage = (
   const level = attacker.level;
   const isPhysical = move.damage_class.name === 'physical';
   
-  // Get base stats
   const baseAttackStat = attacker.stats.find(s => s.stat.name === (isPhysical ? 'attack' : 'special-attack'))?.base_stat || 100;
   const baseDefenseStat = defender.stats.find(s => s.stat.name === (isPhysical ? 'defense' : 'special-defense'))?.base_stat || 100;
   
-  // Apply stat stages
   const attackStatName = isPhysical ? 'attack' : 'special-attack';
   const defenseStatName = isPhysical ? 'defense' : 'special-defense';
   
@@ -414,11 +465,9 @@ export const calculateDamage = (
     attackStat = Math.floor(attackStat / 2);
   }
 
-  // Calculate modifiers
   const defenderTypes = defender.types.map(t => t.type.name);
   const effectiveness = getTypeEffectiveness(move.type.name, defenderTypes);
   
-  // Type immunity from type chart (e.g., Normal vs Ghost)
   if (effectiveness === 0) {
     return { damage: 0, effectiveness: 0, isCritical: false };
   }
@@ -428,10 +477,8 @@ export const calculateDamage = (
   const criticalHit = isCritical ? 1.5 : 1;
   const random = (Math.random() * 0.15) + 0.85;
   
-  // Flash Fire boost (1.5x for Fire moves)
   const flashFireBoost = (attacker.flashFireActive && move.type.name === 'fire') ? 1.5 : 1;
 
-  // Calculate damage
   const baseDamage = ((((2 * level / 5) + 2) * move.power * (attackStat / defenseStat)) / 50) + 2;
   const damage = Math.floor(baseDamage * stab * effectiveness * criticalHit * random * flashFireBoost);
 
@@ -444,7 +491,6 @@ export const determineFirstAttacker = (
   move1Priority?: number,
   move2Priority?: number
 ): 'pokemon1' | 'pokemon2' => {
-  // Check move priority first
   const priority1 = move1Priority ?? 0;
   const priority2 = move2Priority ?? 0;
   
@@ -452,14 +498,12 @@ export const determineFirstAttacker = (
     return priority1 > priority2 ? 'pokemon1' : 'pokemon2';
   }
 
-  // Apply speed stages when determining turn order
   const baseSpeed1 = pokemon1.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
   const baseSpeed2 = pokemon2.stats.find(s => s.stat.name === 'speed')?.base_stat || 50;
   
   let speed1 = getEffectiveStat(baseSpeed1, pokemon1.statStages?.speed || 0);
   let speed2 = getEffectiveStat(baseSpeed2, pokemon2.statStages?.speed || 0);
   
-  // Paralysis halves speed
   if (pokemon1.status === 'paralysis') {
     speed1 = Math.floor(speed1 / 2);
   }
@@ -467,7 +511,6 @@ export const determineFirstAttacker = (
     speed2 = Math.floor(speed2 / 2);
   }
   
-  // Speed tie: random
   if (speed1 === speed2) {
     return Math.random() < 0.5 ? 'pokemon1' : 'pokemon2';
   }
@@ -516,7 +559,6 @@ export const selectCpuMove = (cpu: BattlePokemon): BattleMove | null => {
   return movesWithPower[Math.floor(Math.random() * movesWithPower.length)];
 };
 
-// Determines if the CPU should switch its active Pokémon.
 export const shouldCpuSwitch = (
   activeCpu: BattlePokemon,
   cpuTeam: BattlePokemon[],
@@ -524,7 +566,6 @@ export const shouldCpuSwitch = (
 ): boolean => {
   const hpPercent = (activeCpu.currentHp / activeCpu.maxHp) * 100;
   
-  // Only consider switching if HP is below 40%
   if (hpPercent > 40) return false;
 
   const hasHealthierAlternative = cpuTeam.some((p, i) => {
@@ -562,7 +603,6 @@ export const selectCpuSwitchTarget = (
   return bestIndex;
 };
 
-// Formats a stat name for display
 export const formatStatName = (statName: string): string => {
   return statName
     .split('-')
@@ -570,7 +610,6 @@ export const formatStatName = (statName: string): string => {
     .join(' ');
 };
 
-// Gets the message for a stat change
 export const getStatChangeMessage = (
   pokemonName: string,
   stat: string,
@@ -603,7 +642,6 @@ export const getStatChangeMessage = (
   }
 };
 
-// Gets the message for a status condition being inflicted
 export const getStatusInflictedMessage = (pokemonName: string, status: StatusCondition): string => {
   switch (status) {
     case 'paralysis':
@@ -623,7 +661,17 @@ export const getStatusInflictedMessage = (pokemonName: string, status: StatusCon
   }
 };
 
-// Gets the message for a status condition preventing action
+export const getVolatileInflictedMessage = (pokemonName: string, condition: VolatileCondition): string => {
+  switch (condition) {
+    case 'confusion':
+      return `${pokemonName} became confused!`;
+    case 'flinch':
+      return ''; // Flinch is silent on application — only shows when it prevents action
+    default:
+      return '';
+  }
+};
+
 export const getStatusPreventMessage = (pokemonName: string, reason: string): string => {
   switch (reason) {
     case 'paralysis':
@@ -641,7 +689,6 @@ export const getStatusPreventMessage = (pokemonName: string, reason: string): st
   }
 };
 
-// Gets the message for waking up or thawing
 export const getStatusCuredMessage = (pokemonName: string, status: StatusCondition): string => {
   switch (status) {
     case 'sleep':

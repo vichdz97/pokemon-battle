@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition } from '../types/pokemon';
+import { AbilityEffect, BattlePokemon, BattleMove, StatStages, StatusCondition, VolatileCondition } from '../types/pokemon';
 import { 
   calculateDamage, 
   checkAccuracy, 
@@ -15,11 +15,15 @@ import {
   getStatusPreventMessage,
   getStatusInflictedMessage,
   getStatusCuredMessage,
+  getVolatileInflictedMessage,
   isStatusMove,
   parseStatChanges,
   getMoveStatTarget,
   getMoveStatusEffect,
+  getMoveVolatileEffect,
+  getMoveFlinchChance,
   isImmuneToStatus,
+  isImmuneToVolatile,
   getMoveHealingPercent,
   getMoveDrainPercent
 } from '../utils/battleCalculations';
@@ -231,6 +235,46 @@ export function useBattle(
     });
   }, [updateCpuTeam]);
 
+  const applyVolatileToPlayer = useCallback((index: number, condition: VolatileCondition) => {
+    updatePlayerTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          if (p.volatileConditions.includes(condition)) return p;
+          let confusionTurns = p.confusionTurns;
+          if (condition === 'confusion') {
+            confusionTurns = Math.floor(Math.random() * 4) + 1; // 1-4 turns
+          }
+          return {
+            ...p,
+            volatileConditions: [...p.volatileConditions, condition],
+            confusionTurns,
+          };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam]);
+
+  const applyVolatileToCpu = useCallback((index: number, condition: VolatileCondition) => {
+    updateCpuTeam(team => {
+      return team.map((p, i) => {
+        if (i === index) {
+          if (p.volatileConditions.includes(condition)) return p;
+          let confusionTurns = p.confusionTurns;
+          if (condition === 'confusion') {
+            confusionTurns = Math.floor(Math.random() * 4) + 1; // 1-4 turns
+          }
+          return {
+            ...p,
+            volatileConditions: [...p.volatileConditions, condition],
+            confusionTurns,
+          };
+        }
+        return p;
+      });
+    });
+  }, [updateCpuTeam]);
+
   const updateStatusTurns = useCallback((isPlayer: boolean, index: number) => {
     const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
     updater(team => {
@@ -255,6 +299,26 @@ export function useBattle(
     });
   }, [updatePlayerTeam, updateCpuTeam]);
 
+  const updateConfusionTurns = useCallback((isPlayer: boolean, index: number) => {
+    const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
+    updater(team => {
+      return team.map((p, i) => {
+        if (i === index && p.volatileConditions.includes('confusion')) {
+          const newTurns = Math.max(0, p.confusionTurns - 1);
+          if (newTurns === 0) {
+            return {
+              ...p,
+              volatileConditions: p.volatileConditions.filter(c => c !== 'confusion'),
+              confusionTurns: 0,
+            };
+          }
+          return { ...p, confusionTurns: newTurns };
+        }
+        return p;
+      });
+    });
+  }, [updatePlayerTeam, updateCpuTeam]);
+
   const clearVolatileCondition = useCallback((isPlayer: boolean, index: number, condition: string) => {
     const updater = isPlayer ? updatePlayerTeam : updateCpuTeam;
     updater(team => {
@@ -269,6 +333,29 @@ export function useBattle(
         return p;
       });
     });
+  }, [updatePlayerTeam, updateCpuTeam]);
+
+  // Clear flinch from both active Pokemon at the start of every turn.
+  // Flinch only lasts the turn it was applied; it's checked before the
+  // slower Pokemon moves and then discarded.
+  const clearFlinchBothSides = useCallback(() => {
+    const playerIdx = activePlayerIndexRef.current;
+    const cpuIdx = activeCpuIndexRef.current;
+
+    updatePlayerTeam(team =>
+      team.map((p, i) =>
+        i === playerIdx && p.volatileConditions.includes('flinch')
+          ? { ...p, volatileConditions: p.volatileConditions.filter(c => c !== 'flinch') }
+          : p
+      )
+    );
+    updateCpuTeam(team =>
+      team.map((p, i) =>
+        i === cpuIdx && p.volatileConditions.includes('flinch')
+          ? { ...p, volatileConditions: p.volatileConditions.filter(c => c !== 'flinch') }
+          : p
+      )
+    );
   }, [updatePlayerTeam, updateCpuTeam]);
 
   const applyFlashFireToPlayer = useCallback((index: number) => {
@@ -413,13 +500,12 @@ export function useBattle(
       await showBattleMessage(message);
     }
 
-    // Handle status condition
+    // Handle non-volatile status condition (burn, paralysis, poison, sleep, freeze)
     const statusEffect = getMoveStatusEffect(move);
     if (statusEffect) {
       const { status, chance } = statusEffect;
       
       if (Math.random() * 100 < chance) {
-        // Status moves target the opponent
         if (!isImmuneToStatus(defender, status)) {
           if (isPlayerAttacker) {
             applyStatusToCpu(defenderIndex, status);
@@ -429,6 +515,26 @@ export function useBattle(
           await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
         } else {
           await showBattleMessage(`It doesn't affect ${transformName(defender.name)}...`);
+        }
+      }
+    }
+
+    // Handle volatile condition (confusion) from status moves like Confuse Ray
+    const volatileEffect = getMoveVolatileEffect(move);
+    if (volatileEffect) {
+      const { condition, chance } = volatileEffect;
+      
+      if (Math.random() * 100 < chance) {
+        if (!isImmuneToVolatile(defender, condition)) {
+          if (isPlayerAttacker) {
+            applyVolatileToCpu(defenderIndex, condition);
+          } else {
+            applyVolatileToPlayer(defenderIndex, condition);
+          }
+          const msg = getVolatileInflictedMessage(transformName(defender.name), condition);
+          if (msg) await showBattleMessage(msg);
+        } else {
+          await showBattleMessage(`${transformName(defender.name)} is already confused!`);
         }
       }
     }
@@ -445,13 +551,14 @@ export function useBattle(
       await healSfx.play();
       await showBattleMessage(`${transformName(attacker.name)} restored HP!`);
     }
-  }, [showBattleMessage, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyHealingToPlayer, applyHealingToCpu]);
+  }, [showBattleMessage, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyVolatileToPlayer, applyVolatileToCpu, applyHealingToPlayer, applyHealingToCpu]);
 
   const processEndOfTurnEffects = useCallback(async (
     pokemon: BattlePokemon,
     index: number,
     isPlayer: boolean
   ): Promise<boolean> => {
+    // --- Status damage (burn, poison) ---
     const statusDamage = calculateStatusDamage(pokemon);
     
     if (statusDamage > 0) {
@@ -478,11 +585,36 @@ export function useBattle(
       }
     }
     
-    // Update status turns
+    // Update status turns (sleep countdown, badly-poisoned escalation)
     updateStatusTurns(isPlayer, index);
+
+    // --- Confusion turn countdown ---
+    // Decrement confusion turns; if it reaches 0 the condition is removed
+    // and a message is shown. The actual "hurt itself" check happens in
+    // canPokemonMove at the START of the turn, not here.
+    if (pokemon.volatileConditions.includes('confusion')) {
+      const updatedPokemon = isPlayer
+        ? playerTeamRef.current[index]
+        : cpuTeamRef.current[index];
+      
+      // Only tick down if we haven't already removed it during canPokemonMove
+      if (updatedPokemon && updatedPokemon.volatileConditions.includes('confusion')) {
+        updateConfusionTurns(isPlayer, index);
+
+        // Re-read after update to check if confusion ended
+        const afterUpdate = isPlayer
+          ? playerTeamRef.current[index]
+          : cpuTeamRef.current[index];
+        
+        // If confusionTurns hit 0, updateConfusionTurns already removed it
+        if (afterUpdate && !afterUpdate.volatileConditions.includes('confusion')) {
+          await showBattleMessage(`${transformName(pokemon.name)} snapped out of its confusion!`);
+        }
+      }
+    }
     
     return false;
-  }, [showBattleMessage, applyDamageToPlayer, applyDamageToCpu, updateStatusTurns]);
+  }, [showBattleMessage, applyDamageToPlayer, applyDamageToCpu, updateStatusTurns, updateConfusionTurns]);
 
   const performAttack = useCallback(async (
     attacker: BattlePokemon,
@@ -491,7 +623,6 @@ export function useBattle(
     move: BattleMove,
     isPlayerAttacker: boolean
   ): Promise<{ damage: number; fainted: boolean; attackerFainted: boolean }> => {
-    // Read the CURRENT defender from refs to get latest HP (e.g., after healing)
     const defender = isPlayerAttacker 
       ? cpuTeamRef.current[defenderIndex]
       : playerTeamRef.current[defenderIndex];
@@ -502,7 +633,6 @@ export function useBattle(
     const { canMove, reason } = canPokemonMove(attacker);
     
     if (!canMove && reason) {
-      // Handle status preventing movement
       if (reason === 'sleep') {
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
         updateStatusTurns(isPlayerAttacker, attackerIndex);
@@ -562,10 +692,16 @@ export function useBattle(
       
       if (reason === 'flinch') {
         await showBattleMessage(getStatusPreventMessage(transformName(attacker.name), reason));
+        // Flinch is consumed after it triggers; clear it so it doesn't persist
         clearVolatileCondition(isPlayerAttacker, attackerIndex, 'flinch');
         await hideMessage();
         return { damage: 0, fainted: false, attackerFainted: false };
       }
+    }
+
+    // If attacker is confused but passed the 33% check, show the message but proceed
+    if (attacker.volatileConditions.includes('confusion')) {
+      await showBattleMessage(`${transformName(attacker.name)} is confused!`);
     }
 
     await showBattleMessage(`${transformName(attacker.name)} used ${transformName(move.name)}!`);
@@ -584,7 +720,6 @@ export function useBattle(
 
     const { damage, effectiveness, isCritical, abilityEffect } = calculateDamage(attacker, defender, move);
     
-    // Handle ability immunity
     if (abilityEffect) {
       await handleAbilityEffect(
         abilityEffect,
@@ -596,7 +731,6 @@ export function useBattle(
       return { damage: 0, fainted: false, attackerFainted: false };
     }
     
-    // Play sound effects
     if (effectiveness < 1) await notEffectiveSfx.play();
     else if (effectiveness > 1) await superEffectiveSfx.play();
     else await (move.damage_class.name.includes('physical') ? physicalAttackSfx.play() : specialAttackSfx.play());
@@ -683,27 +817,71 @@ export function useBattle(
       }
     }
 
-    // Handle secondary effects (status from damaging moves)
-    const statusEffect = getMoveStatusEffect(move);
-    if (statusEffect && newHp > 0) {
-      const { status, chance } = statusEffect;
-      if (Math.random() * 100 < chance) {
-        const currentDefender = isPlayerAttacker 
+    // ---- Secondary effects on the defender (only if defender is still alive) ----
+    if (newHp > 0) {
+      // Non-volatile status (burn, paralysis, poison, sleep, freeze)
+      const statusEffect = getMoveStatusEffect(move);
+      if (statusEffect) {
+        const { status, chance } = statusEffect;
+        if (Math.random() * 100 < chance) {
+          const currentDefender = isPlayerAttacker 
+            ? cpuTeamRef.current[defenderIndex]
+            : playerTeamRef.current[defenderIndex];
+          
+          if (currentDefender && !isImmuneToStatus(currentDefender, status)) {
+            if (isPlayerAttacker) {
+              applyStatusToCpu(defenderIndex, status);
+            } else {
+              applyStatusToPlayer(defenderIndex, status);
+            }
+            await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
+          }
+        }
+      }
+
+      // Volatile condition (confusion) from damaging moves (e.g. Psybeam, Confusion, DynamicPunch)
+      const volatileEffect = getMoveVolatileEffect(move);
+      if (volatileEffect) {
+        const { condition, chance } = volatileEffect;
+        if (Math.random() * 100 < chance) {
+          const currentDefender = isPlayerAttacker
+            ? cpuTeamRef.current[defenderIndex]
+            : playerTeamRef.current[defenderIndex];
+
+          if (currentDefender && !isImmuneToVolatile(currentDefender, condition)) {
+            if (isPlayerAttacker) {
+              applyVolatileToCpu(defenderIndex, condition);
+            } else {
+              applyVolatileToPlayer(defenderIndex, condition);
+            }
+            const msg = getVolatileInflictedMessage(transformName(defender.name), condition);
+            if (msg) await showBattleMessage(msg);
+          }
+        }
+      }
+
+      // Flinch chance from damaging moves (e.g. Bite, Iron Head, Fake Out)
+      // Flinch only matters if the attacker moved first — the defender hasn't
+      // acted yet this turn. We apply it unconditionally here; the flinch check
+      // in canPokemonMove will prevent the defender from moving.
+      const flinchChance = getMoveFlinchChance(move);
+      if (flinchChance > 0 && Math.random() * 100 < flinchChance) {
+        const currentDefender = isPlayerAttacker
           ? cpuTeamRef.current[defenderIndex]
           : playerTeamRef.current[defenderIndex];
-        
-        if (currentDefender && !isImmuneToStatus(currentDefender, status)) {
+
+        if (currentDefender && !currentDefender.volatileConditions.includes('flinch')) {
           if (isPlayerAttacker) {
-            applyStatusToCpu(defenderIndex, status);
+            applyVolatileToCpu(defenderIndex, 'flinch');
           } else {
-            applyStatusToPlayer(defenderIndex, status);
+            applyVolatileToPlayer(defenderIndex, 'flinch');
           }
-          await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
+          // Flinch is silent on application; it shows a message only when it blocks movement
         }
       }
     }
 
-    // Handle stat changes from damaging moves
+    // ---- Stat changes from damaging moves ----
     const statChanges = parseStatChanges(move);
     const statChance = move.meta?.stat_chance || 100;
     
@@ -743,7 +921,7 @@ export function useBattle(
 
     await hideMessage();
     return { damage, fainted, attackerFainted };
-  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, applyHealingToPlayer, applyHealingToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu]);
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, applyHealingToPlayer, applyHealingToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyVolatileToPlayer, applyVolatileToCpu]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
     const team = isPlayerFainted ? playerTeamRef.current : cpuTeamRef.current;
@@ -811,6 +989,9 @@ export function useBattle(
     if (!player || !cpu || isProcessing) return;
     
     setIsProcessing(true);
+
+    // Clear flinch from the previous turn (flinch only lasts one turn)
+    clearFlinchBothSides();
 
     // Decrement player move PP
     const playerMoveIndex = player.selectedMoves.findIndex(m => m.id === playerMove.id);
@@ -1025,7 +1206,7 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp, processEndOfTurnEffects]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp, processEndOfTurnEffects, clearFlinchBothSides]);
 
   const executePlayerSwitch = useCallback(async (newIndex: number) => {
     if (isProcessing && forcedSwitch !== 'player') return;
