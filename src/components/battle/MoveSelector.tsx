@@ -2,18 +2,19 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
-import { BattleMove } from '../../types/pokemon';
-import { typeColors } from '../../utils/typeEffectiveness';
+import { BattleMove, BattlePokemon } from '../../types/pokemon';
+import { typeColors, getTypeEffectiveness } from '../../utils/typeEffectiveness';
 import { GlassButton } from '../common/GlassButton';
 
 interface MoveSelectorProps {
   moves: BattleMove[];
+  defender?: BattlePokemon;
   onSelectMove: (move: BattleMove) => void;
   onBack: () => void;
   disabled?: boolean;
 }
 
-export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: MoveSelectorProps) {
+export function MoveSelector({ moves, defender, onSelectMove, onBack, disabled = false }: MoveSelectorProps) {
   const [hoveredMove, setHoveredMove] = useState<BattleMove | null>(null);
   const [infoMode, setInfoMode] = useState(false);
   const [selectedMoveForInfo, setSelectedMoveForInfo] = useState<BattleMove | null>(null);
@@ -25,6 +26,28 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Calculate type effectiveness for a move against the defender
+  const getEffectiveness = (move: BattleMove): number => {
+    if (!defender) return 1;
+    if (move.damage_class.name === 'status') return 1; // Status moves don't have type effectiveness
+    const defenderTypes = defender.types.map(t => t.type.name);
+    return getTypeEffectiveness(move.type.name, defenderTypes);
+  };
+
+  // Get effectiveness label and styling
+  const getEffectivenessDisplay = (effectiveness: number): { label: string; color: string; bgColor: string } | null => {
+    if (effectiveness === 0) {
+      return { label: 'No Effect', color: 'text-gray-300', bgColor: 'bg-gray-700' };
+    }
+    if (effectiveness < 1) {
+      return { label: 'Not Effective', color: 'text-orange-300', bgColor: 'bg-orange-900/60' };
+    }
+    if (effectiveness > 1) {
+      return { label: 'Super Effective', color: 'text-green-300', bgColor: 'bg-green-900/60' };
+    }
+    return null; // Neutral effectiveness (1x)
+  };
 
   const handleMoveClick = (move: BattleMove) => {
     if (disabled) return;
@@ -74,7 +97,8 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
           onClick={(e) => e.stopPropagation()}
         >
           <MoveInfoPanel 
-            move={selectedMoveForInfo} 
+            move={selectedMoveForInfo}
+            effectiveness={getEffectiveness(selectedMoveForInfo)}
             showUseButton={selectedMoveForInfo.currentPp > 0}
             onUseMove={handleUseMoveFromInfo}
             onClose={() => setSelectedMoveForInfo(null)}
@@ -99,7 +123,10 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
               transition={{ duration: 0.15 }}
               className='hidden md:block absolute w-full -translate-x-full pr-3'
             >
-              <MoveInfoPanel move={hoveredMove} />
+              <MoveInfoPanel 
+                move={hoveredMove}
+                effectiveness={getEffectiveness(hoveredMove)}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -142,6 +169,8 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
               const noPP = move.currentPp <= 0;
               const isDisabled = disabled || (noPP && !infoMode);
               const isHovered = hoveredMove?.id === move.id;
+              const effectiveness = getEffectiveness(move);
+              const effectivenessDisplay = getEffectivenessDisplay(effectiveness);
 
               return (
                 <motion.button
@@ -165,13 +194,32 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
                   {/* Shine overlay */}
                   <div className='-z-1 absolute inset-0 bg-gradient-to-b from-slate-100/20 to-tekken-dark/30 pointer-events-none' />
 
-                  {/* Move Type */}
-                  <span 
-                    className='row-start-2 col-start-1 md:w-1/4 px-2 py-0.5 rounded font-bold text-[10px] uppercase text-slate-100' 
-                    style={{ backgroundColor: typeColor }}
-                  >
-                    {move.type.name}
-                  </span>
+                  {/* Move Type & Effectiveness Tag */}
+                  <div className='md:flex md:flex-col md:w-1/4 md:gap-1'>
+                    <span 
+                      className='absolute bottom-0 left-0 m-2 md:relative md:m-0 px-2 py-0.5 rounded font-bold text-[10px] uppercase text-slate-100' 
+                      style={{ backgroundColor: typeColor }}
+                    >
+                      {move.type.name}
+                    </span>
+                    {effectivenessDisplay && (
+                      <span 
+                        className={clsx(
+                          'absolute top-0 right-0 m-2 md:relative md:m-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex-shrink-0',
+                          effectivenessDisplay.color,
+                          effectivenessDisplay.bgColor
+                        )}
+                      >
+                        {/* Show shorter labels on mobile */}
+                        <span className='md:hidden'>
+                          {effectiveness === 0 ? '0×' : effectiveness > 1 ? '2×' : '½×'}
+                        </span>
+                        <span className='hidden md:inline'>
+                          {effectivenessDisplay.label}
+                        </span>
+                      </span>
+                    )}
+                  </div>
 
                   {/* Move Name */}
                   <span className='row-start-1 col-span-2 md:flex-1 font-orbitron font-semibold text-sm text-left capitalize truncate'>
@@ -210,13 +258,15 @@ export function MoveSelector({ moves, onSelectMove, onBack, disabled = false }: 
 
 interface MoveInfoPanelProps {
   move: BattleMove;
+  effectiveness?: number;
   showUseButton?: boolean;
   onUseMove?: () => void;
   onClose?: () => void;
 }
 
-function MoveInfoPanel({ move, showUseButton = false, onUseMove, onClose }: MoveInfoPanelProps) {
+function MoveInfoPanel({ move, effectiveness = 1, showUseButton = false, onUseMove, onClose }: MoveInfoPanelProps) {
   const typeColor = typeColors[move.type.name] || '#888';
+  const isStatusMove = move.damage_class.name === 'status';
 
   const getDamageClassIcon = (damageClass: string) => {
     switch (damageClass) {
@@ -230,6 +280,30 @@ function MoveInfoPanel({ move, showUseButton = false, onUseMove, onClose }: Move
         return '';
     }
   };
+
+  // Get effectiveness display for the info panel
+  const getEffectivenessInfo = (): { label: string; multiplier: string; color: string; bgColor: string } | null => {
+    if (isStatusMove) return null;
+    
+    if (effectiveness === 0) {
+      return { label: 'No Effect', multiplier: '0×', color: 'text-gray-200', bgColor: 'bg-gray-700' };
+    }
+    if (effectiveness === 0.25) {
+      return { label: 'Not Very Effective', multiplier: '¼×', color: 'text-orange-200', bgColor: 'bg-orange-900/60' };
+    }
+    if (effectiveness === 0.5) {
+      return { label: 'Not Very Effective', multiplier: '½×', color: 'text-orange-200', bgColor: 'bg-orange-900/60' };
+    }
+    if (effectiveness === 2) {
+      return { label: 'Super Effective', multiplier: '2×', color: 'text-green-200', bgColor: 'bg-green-900/60' };
+    }
+    if (effectiveness === 4) {
+      return { label: 'Super Effective', multiplier: '4×', color: 'text-green-200', bgColor: 'bg-green-900/60' };
+    }
+    return null; // Neutral (1×)
+  };
+
+  const effectivenessInfo = getEffectivenessInfo();
 
   return (
     <div className='bg-tekken-panel/95 backdrop-blur-xl border border-slate-100/20 rounded-lg overflow-hidden shadow-2xl'>
@@ -258,6 +332,21 @@ function MoveInfoPanel({ move, showUseButton = false, onUseMove, onClose }: Move
             </span>
           </div>
         </div>
+
+        {/* Effectiveness Banner */}
+        {effectivenessInfo && (
+          <div className={clsx(
+            'mt-2 px-3 py-1.5 rounded-lg flex items-center justify-between',
+            effectivenessInfo.bgColor
+          )}>
+            <span className={clsx('font-rajdhani font-semibold text-sm', effectivenessInfo.color)}>
+              {effectivenessInfo.label}
+            </span>
+            <span className={clsx('font-orbitron font-bold text-lg', effectivenessInfo.color)}>
+              {effectivenessInfo.multiplier}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Move Stats */}

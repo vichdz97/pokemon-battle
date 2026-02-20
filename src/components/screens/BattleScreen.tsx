@@ -516,6 +516,7 @@ export function BattleScreen() {
               {!showForcedSwitch && !switchPrompt && menuState === 'moves' && (
                 <MoveSelector
                   moves={activePlayer.selectedMoves}
+                  defender={activeCpu}
                   onSelectMove={handleMoveSelect}
                   onBack={() => setMenuState('action')}
                   disabled={isProcessing}
