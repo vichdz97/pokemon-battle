@@ -29,6 +29,7 @@ import {
 } from '../utils/battleCalculations';
 import { getEffectivenessMessage } from '../utils/typeEffectiveness';
 import { useNavigate } from 'react-router-dom';
+import { getPokemonCry } from '../services/pokeApi';
 
 const MESSAGE_DISPLAY_TIME = 1800;
 const MESSAGE_TRANSITION_TIME = 400;
@@ -39,6 +40,7 @@ const notEffectiveSfx = new Audio('/src/assets/sounds/not-effective.mp3');
 const superEffectiveSfx = new Audio('/src/assets/sounds/super-effective.mp3');
 const physicalAttackSfx = new Audio('/src/assets/sounds/hit.mp3');
 const specialAttackSfx = new Audio('/src/assets/sounds/zap.mp3');
+const throwSfx = new Audio('/src/assets/sounds/pokeball-throw.mp3');
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1335,6 +1337,9 @@ export function useBattle(
       // Voluntary switch - CPU still gets to attack
       await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
+      await throwSfx.play();
+      await delay(1000);
+      await new Audio(getPokemonCry(playerTeamRef.current[newIndex])).play();
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       await hideMessage();
 
@@ -1347,6 +1352,9 @@ export function useBattle(
           if (switchTarget >= 0) {
             await showBattleMessage(`Opponent withdrew ${transformName(cpu.name)}!`);
             setActiveCpuIndex(switchTarget);
+            await throwSfx.play();
+            await delay(1000);
+            await new Audio(getPokemonCry(cpuTeamRef.current[switchTarget])).play();
             await showBattleMessage(`Opponent sends out ${transformName(cpuTeamRef.current[switchTarget].name)}!`);
             await hideMessage();
           }
@@ -1371,10 +1379,16 @@ export function useBattle(
       // Player chose to switch after KO'ing opponent's Pokemon
       await showBattleMessage(`${transformName(currentPlayer.name)}, come back!`);
       setActivePlayerIndex(newIndex);
+      await throwSfx.play();
+      await delay(1000);
+      await new Audio(getPokemonCry(currentPlayer)).play();
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       
       // Now reveal and send out the CPU's pre-selected Pokemon
       if (nextCpuIndex >= 0) {
+        await throwSfx.play();
+        await delay(1000);
+        await new Audio(getPokemonCry(cpuTeamRef.current[nextCpuIndex])).play();
         await showBattleMessage(`Opponent sent out ${transformName(cpuTeamRef.current[nextCpuIndex].name)}!`);
         setActiveCpuIndex(nextCpuIndex);
       }
@@ -1382,6 +1396,9 @@ export function useBattle(
     } else {
       // Forced switch after player's Pokemon fainted
       setActivePlayerIndex(newIndex);
+      await throwSfx.play();
+      await delay(1000);
+      await new Audio(getPokemonCry(currentPlayer)).play();
       await showBattleMessage(`Go, ${transformName(playerTeamRef.current[newIndex].name)}!`);
       await hideMessage();
     }
