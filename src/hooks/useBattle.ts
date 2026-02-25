@@ -49,6 +49,27 @@ export interface AbilityToastData {
   visible: boolean;
 }
 
+export type MoveAnimationKind = 'special' | 'physical' | 'status' | null;
+
+export interface MoveAnimationState {
+  kind: MoveAnimationKind;
+  moveType: string;
+  isPlayer: boolean;
+  visible: boolean;
+}
+
+export interface StatAnimationState {
+  isIncrease: boolean;
+  isPlayer: boolean;
+  visible: boolean;
+}
+
+export interface ConditionAnimationState {
+  visible: boolean;
+  condition: string;   // StatusCondition | VolatileCondition string
+  isPlayer: boolean;
+}
+
 export function useBattle(
   playerTeam: BattlePokemon[],
   cpuTeam: BattlePokemon[],
@@ -79,6 +100,31 @@ export function useBattle(
     visible: false,
   });
 
+  const [moveAnimation, setMoveAnimation] = useState<MoveAnimationState>({
+    kind: null,
+    moveType: 'normal',
+    isPlayer: true,
+    visible: false,
+  });
+
+  const [playerStatAnimation, setPlayerStatAnimation] = useState<StatAnimationState>({
+    isIncrease: true,
+    isPlayer: true,
+    visible: false,
+  });
+
+  const [cpuStatAnimation, setCpuStatAnimation] = useState<StatAnimationState>({
+    isIncrease: true,
+    isPlayer: false,
+    visible: false,
+  });
+
+  const [conditionAnimation, setConditionAnimation] = useState<ConditionAnimationState>({
+    visible: false,
+    condition: '',
+    isPlayer: true,
+  });
+
   const abilityToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const playerTeamRef = useRef(playerTeam);
@@ -86,23 +132,11 @@ export function useBattle(
   const activePlayerIndexRef = useRef(activePlayerIndex);
   const activeCpuIndexRef = useRef(activeCpuIndex);
 
-  useEffect(() => {
-    playerTeamRef.current = playerTeam;
-  }, [playerTeam]);
+  useEffect(() => { playerTeamRef.current = playerTeam; }, [playerTeam]);
+  useEffect(() => { cpuTeamRef.current = cpuTeam; }, [cpuTeam]);
+  useEffect(() => { activePlayerIndexRef.current = activePlayerIndex; }, [activePlayerIndex]);
+  useEffect(() => { activeCpuIndexRef.current = activeCpuIndex; }, [activeCpuIndex]);
 
-  useEffect(() => {
-    cpuTeamRef.current = cpuTeam;
-  }, [cpuTeam]);
-
-  useEffect(() => {
-    activePlayerIndexRef.current = activePlayerIndex;
-  }, [activePlayerIndex]);
-
-  useEffect(() => {
-    activeCpuIndexRef.current = activeCpuIndex;
-  }, [activeCpuIndex]);
-
-  // Clean up toast timer on unmount
   useEffect(() => {
     return () => {
       if (abilityToastTimerRef.current) {
@@ -111,8 +145,41 @@ export function useBattle(
     };
   }, []);
 
+  const triggerMoveAnimation = useCallback(async (
+    kind: MoveAnimationKind,
+    moveType: string,
+    isPlayer: boolean,
+    durationMs = 600
+  ) => {
+    setMoveAnimation({ kind, moveType, isPlayer, visible: true });
+    await delay(durationMs);
+    setMoveAnimation(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  const triggerStatAnimation = useCallback(async (
+    isPlayer: boolean,
+    isIncrease: boolean,
+    durationMs = 900
+  ) => {
+    const setter = isPlayer ? setPlayerStatAnimation : setCpuStatAnimation;
+    setter({ isIncrease, isPlayer, visible: true });
+    const statSfx = new Audio(`/src/assets/sounds/stats-${isIncrease ? 'raise' : 'fall'}.mp3`);
+    await statSfx.play();
+    await delay(durationMs);
+    setter(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  const triggerConditionAnimation = useCallback(async (
+    condition: string,
+    isPlayer: boolean,
+    durationMs = 1300,
+  ) => {
+    setConditionAnimation({ visible: true, condition, isPlayer });
+    await delay(durationMs);
+    setConditionAnimation(prev => ({ ...prev, visible: false }));
+  }, []);
+
   const showAbilityToast = useCallback((pokemonName: string, abilityName: string, isPlayer: boolean) => {
-    // Clear any existing timer
     if (abilityToastTimerRef.current) {
       clearTimeout(abilityToastTimerRef.current);
     }
@@ -286,7 +353,7 @@ export function useBattle(
           if (p.volatileConditions.includes(condition)) return p;
           let confusionTurns = p.confusionTurns;
           if (condition === 'confusion') {
-            confusionTurns = Math.floor(Math.random() * 4) + 1; // 1-4 turns
+            confusionTurns = Math.floor(Math.random() * 4) + 1;
           }
           return {
             ...p,
@@ -450,7 +517,6 @@ export function useBattle(
     defenderName: string,
     isPlayerDefender: boolean
   ) => {
-    // Show the ability toast
     showAbilityToast(defenderName, abilityEffect.abilityName, isPlayerDefender);
 
     await showBattleMessage(`It doesn't affect ${transformName(defenderName)}...`);
@@ -460,7 +526,6 @@ export function useBattle(
         ? playerTeamRef.current[defenderIndex]
         : cpuTeamRef.current[defenderIndex];
       
-      // Only heal if not at full HP
       if (defender && defender.currentHp < defender.maxHp) {
         await healSfx.play();
         if (isPlayerDefender) {
@@ -478,6 +543,11 @@ export function useBattle(
         ? applyStatChangeToPlayer(defenderIndex, stat, stages)
         : applyStatChangeToCpu(defenderIndex, stat, stages);
       
+      // Trigger stat animation for the defender
+      if (!result.maxedOut) {
+        await triggerStatAnimation(isPlayerDefender, stages > 0);
+      }
+
       const message = getStatChangeMessage(
         transformName(defenderName),
         stat,
@@ -503,7 +573,9 @@ export function useBattle(
         await showBattleMessage(`${transformName(defenderName)}'s Flash Fire is already active!`);
       }
     }
-  }, [showBattleMessage, showAbilityToast, applyHealingToPlayer, applyHealingToCpu, applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer, applyFlashFireToCpu]);
+  }, [showBattleMessage, showAbilityToast, applyHealingToPlayer, applyHealingToCpu,
+      applyStatChangeToPlayer, applyStatChangeToCpu, applyFlashFireToPlayer,
+      applyFlashFireToCpu, triggerStatAnimation]);
 
   const handleStatusMoveEffects = useCallback(async (
     attacker: BattlePokemon,
@@ -518,6 +590,7 @@ export function useBattle(
 
     if (!defender) return;
 
+    // Stat changes from status moves (e.g. Growl, Tail Whip, Swords Dance)
     const statChanges = parseStatChanges(move);
     const statTarget = getMoveStatTarget(move);
 
@@ -525,18 +598,26 @@ export function useBattle(
       let targetName: string;
       let targetIndex: number;
       let applyStatFn: (index: number, stat: keyof StatStages, stages: number) => { actualChange: number; maxedOut: boolean };
+      let isTargetPlayer: boolean;
 
       if (statTarget === 'user') {
         targetName = attacker.name;
         targetIndex = attackerIndex;
         applyStatFn = isPlayerAttacker ? applyStatChangeToPlayer : applyStatChangeToCpu;
+        isTargetPlayer = isPlayerAttacker;
       } else {
         targetName = defender.name;
         targetIndex = defenderIndex;
         applyStatFn = isPlayerAttacker ? applyStatChangeToCpu : applyStatChangeToPlayer;
+        isTargetPlayer = !isPlayerAttacker;
       }
 
       const result = applyStatFn(targetIndex, stat, stages);
+      if (!result.maxedOut) {
+        // Fire-and-forget so it overlaps with the message
+        triggerStatAnimation(isTargetPlayer, stages > 0);
+      }
+
       const message = getStatChangeMessage(
         transformName(targetName),
         stat,
@@ -546,11 +627,10 @@ export function useBattle(
       await showBattleMessage(message);
     }
 
-    // Handle non-volatile status condition (burn, paralysis, poison, sleep, freeze)
+    // Non-volatile status condition (burn, paralysis, poison, sleep, freeze)
     const statusEffect = getMoveStatusEffect(move);
     if (statusEffect) {
       const { status, chance } = statusEffect;
-      
       if (Math.random() * 100 < chance) {
         if (!isImmuneToStatus(defender, status)) {
           if (isPlayerAttacker) {
@@ -558,6 +638,7 @@ export function useBattle(
           } else {
             applyStatusToPlayer(defenderIndex, status);
           }
+          triggerConditionAnimation(status!, !isPlayerAttacker);
           await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
         } else {
           await showBattleMessage(`It doesn't affect ${transformName(defender.name)}...`);
@@ -565,11 +646,10 @@ export function useBattle(
       }
     }
 
-    // Handle volatile condition (confusion) from status moves like Confuse Ray
+    // Volatile condition (e.g. confusion from Confuse Ray)
     const volatileEffect = getMoveVolatileEffect(move);
     if (volatileEffect) {
       const { condition, chance } = volatileEffect;
-      
       if (Math.random() * 100 < chance) {
         if (!isImmuneToVolatile(defender, condition)) {
           if (isPlayerAttacker) {
@@ -577,6 +657,7 @@ export function useBattle(
           } else {
             applyVolatileToPlayer(defenderIndex, condition);
           }
+          triggerConditionAnimation(condition, !isPlayerAttacker);
           const msg = getVolatileInflictedMessage(transformName(defender.name), condition);
           if (msg) await showBattleMessage(msg);
         } else {
@@ -585,7 +666,7 @@ export function useBattle(
       }
     }
 
-    // Handle healing moves
+    // Healing moves (Recover, Roost, etc.)
     const healingPercent = getMoveHealingPercent(move);
     if (healingPercent > 0) {
       const healAmount = Math.floor(attacker.maxHp * (healingPercent / 100));
@@ -597,7 +678,14 @@ export function useBattle(
       await healSfx.play();
       await showBattleMessage(`${transformName(attacker.name)} restored HP!`);
     }
-  }, [showBattleMessage, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyVolatileToPlayer, applyVolatileToCpu, applyHealingToPlayer, applyHealingToCpu]);
+  }, [
+    showBattleMessage,
+    applyStatChangeToPlayer, applyStatChangeToCpu,
+    applyStatusToPlayer, applyStatusToCpu,
+    applyVolatileToPlayer, applyVolatileToCpu,
+    applyHealingToPlayer, applyHealingToCpu,
+    triggerStatAnimation, triggerConditionAnimation,
+  ]);
 
   const processEndOfTurnEffects = useCallback(async (
     pokemon: BattlePokemon,
@@ -757,6 +845,7 @@ export function useBattle(
     }
 
     if (isStatusMove(move)) {
+      // Status move animation is triggered inside handleStatusMoveEffects
       await handleStatusMoveEffects(attacker, attackerIndex, defenderIndex, move, isPlayerAttacker);
       await hideMessage();
       return { damage: 0, fainted: false, attackerFainted: false };
@@ -779,7 +868,9 @@ export function useBattle(
     else if (effectiveness > 1) await superEffectiveSfx.play();
     else await (move.damage_class.name.includes('physical') ? physicalAttackSfx.play() : specialAttackSfx.play());
 
-    // Trigger attack animation
+    const moveKind: MoveAnimationKind =
+      move.damage_class.name === 'physical' ? 'physical' : 'special';
+
     if (isPlayerAttacker) {
       setPlayerAttacking(true);
       setTimeout(() => setPlayerAttacking(false), 800);
@@ -787,6 +878,12 @@ export function useBattle(
       setCpuAttacking(true);
       setTimeout(() => setCpuAttacking(false), 800);
     }
+
+    // Trigger the overlay animation (don't await so it overlaps with lunge)
+    // Physical: 700 ms matches the sprite lunge transition exactly.
+    // Special:  850 ms for the laser to travel and fade.
+    triggerMoveAnimation(moveKind, move.type.name, isPlayerAttacker,
+      moveKind === 'physical' ? 700 : 850);
 
     await delay(400);
 
@@ -878,6 +975,7 @@ export function useBattle(
             } else {
               applyStatusToPlayer(defenderIndex, status);
             }
+            triggerConditionAnimation(status!, !isPlayerAttacker);
             await showBattleMessage(getStatusInflictedMessage(transformName(defender.name), status));
           }
         }
@@ -898,6 +996,7 @@ export function useBattle(
             } else {
               applyVolatileToPlayer(defenderIndex, condition);
             }
+            triggerConditionAnimation(condition, !isPlayerAttacker);
             const msg = getVolatileInflictedMessage(transformName(defender.name), condition);
             if (msg) await showBattleMessage(msg);
           }
@@ -920,12 +1019,11 @@ export function useBattle(
           } else {
             applyVolatileToPlayer(defenderIndex, 'flinch');
           }
-          // Flinch is silent on application; it shows a message only when it blocks movement
         }
       }
     }
 
-    // ---- Stat changes from damaging moves ----
+    // ─── Stat changes from damaging moves ────────────────────────────────
     const statChanges = parseStatChanges(move);
     const statChance = move.meta?.stat_chance || 100;
     
@@ -936,20 +1034,28 @@ export function useBattle(
         let targetName: string;
         let targetIndex: number;
         let applyStatFn: (index: number, stat: keyof StatStages, stages: number) => { actualChange: number; maxedOut: boolean };
+        let isTargetPlayer: boolean;
 
         if (statTarget === 'user') {
           // Stat changes target the attacker (e.g. Superpower, Close Combat)
           targetName = attacker.name;
           targetIndex = attackerIndex;
           applyStatFn = isPlayerAttacker ? applyStatChangeToPlayer : applyStatChangeToCpu;
+          isTargetPlayer = isPlayerAttacker;
         } else {
           // Stat changes target the defender (secondary effect like Psychic lowering Sp.Def)
           targetName = defender.name;
           targetIndex = defenderIndex;
           applyStatFn = isPlayerAttacker ? applyStatChangeToCpu : applyStatChangeToPlayer;
+          isTargetPlayer = !isPlayerAttacker;
         }
 
         const result = applyStatFn(targetIndex, stat, stages);
+
+        if (!result.maxedOut) {
+          await triggerStatAnimation(isTargetPlayer, stages > 0);
+        }
+
         const message = getStatChangeMessage(
           transformName(targetName),
           stat,
@@ -965,7 +1071,11 @@ export function useBattle(
 
     await hideMessage();
     return { damage, fainted, attackerFainted };
-  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu, applyHealingToPlayer, applyHealingToCpu, handleAbilityEffect, handleStatusMoveEffects, updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu, applyStatusToPlayer, applyStatusToCpu, applyVolatileToPlayer, applyVolatileToCpu]);
+  }, [showBattleMessage, hideMessage, applyDamageToPlayer, applyDamageToCpu,
+      applyHealingToPlayer, applyHealingToCpu, handleAbilityEffect, handleStatusMoveEffects,
+      updateStatusTurns, clearVolatileCondition, applyStatChangeToPlayer, applyStatChangeToCpu,
+      applyStatusToPlayer, applyStatusToCpu, applyVolatileToPlayer, applyVolatileToCpu,
+      triggerMoveAnimation, triggerStatAnimation]);
 
   const handleFaintedPokemon = useCallback(async (isPlayerFainted: boolean): Promise<boolean> => {
     const team = isPlayerFainted ? playerTeamRef.current : cpuTeamRef.current;
@@ -1032,8 +1142,6 @@ export function useBattle(
     if (!player || !cpu || isProcessing) return;
     
     setIsProcessing(true);
-
-    // Clear flinch from the previous turn (flinch only lasts one turn)
     clearFlinchBothSides();
 
     // Decrement player move PP
@@ -1104,23 +1212,13 @@ export function useBattle(
 
       if (firstResult.fainted) {
         const battleOver = await handleFaintedPokemon(false);
-        if (battleOver) {
-          setIsProcessing(false);
-          return;
-        }
-        // Wait for switch prompt
+        if (battleOver) { setIsProcessing(false); return; }
         return;
       }
 
-      // Check if the player's attacker fainted from recoil
       if (firstResult.attackerFainted) {
         const battleOver = await handleFaintedPokemon(true);
-        if (battleOver) {
-          setIsProcessing(false);
-          return;
-        }
-        // If player still has Pokemon, they must switch; CPU doesn't get to attack
-        // because the current player Pokemon fainted before CPU's turn.
+        if (battleOver) { setIsProcessing(false); return; }
         return;
       }
 
@@ -1132,17 +1230,10 @@ export function useBattle(
         const secondResult = await performAttack(currentCpu, activeCpuIndexRef.current, activePlayerIndexRef.current, cpuMove, false);
         if (secondResult.fainted) {
           const battleOver = await handleFaintedPokemon(true);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
         } else if (secondResult.attackerFainted) {
-          // CPU fainted from recoil
           const battleOver = await handleFaintedPokemon(false);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
           return;
         }
       }
@@ -1155,10 +1246,7 @@ export function useBattle(
         const playerFainted = await processEndOfTurnEffects(currentPlayer, activePlayerIndexRef.current, true);
         if (playerFainted) {
           const battleOver = await handleFaintedPokemon(true);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
         }
       }
       
@@ -1166,10 +1254,7 @@ export function useBattle(
         const cpuFainted = await processEndOfTurnEffects(currentCpuAfter, activeCpuIndexRef.current, false);
         if (cpuFainted) {
           const battleOver = await handleFaintedPokemon(false);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
         }
       }
     } else {
@@ -1177,24 +1262,13 @@ export function useBattle(
 
       if (firstResult.fainted) {
         const battleOver = await handleFaintedPokemon(true);
-        if (battleOver) {
-          setIsProcessing(false);
-          return;
-        }
+        if (battleOver) { setIsProcessing(false); return; }
         return;
       }
 
-      // Check if CPU fainted from recoil
       if (firstResult.attackerFainted) {
         const battleOver = await handleFaintedPokemon(false);
-        if (battleOver) {
-          setIsProcessing(false);
-          return;
-        }
-        // CPU fainted from recoil; player still gets to attack, but we need
-        // to wait for CPU switch before player's turn continues.
-        // For simplicity, skip player's attack this turn (similar to how
-        // player fainting from recoil skips CPU's attack above).
+        if (battleOver) { setIsProcessing(false); return; }
         return;
       }
 
@@ -1205,18 +1279,11 @@ export function useBattle(
         const secondResult = await performAttack(currentPlayer, activePlayerIndexRef.current, activeCpuIndexRef.current, playerMove, true);
         if (secondResult.fainted) {
           const battleOver = await handleFaintedPokemon(false);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
           return;
         } else if (secondResult.attackerFainted) {
-          // Player fainted from recoil
           const battleOver = await handleFaintedPokemon(true);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
           return;
         }
       }
@@ -1229,10 +1296,7 @@ export function useBattle(
         const cpuFainted = await processEndOfTurnEffects(cpuAfter, activeCpuIndexRef.current, false);
         if (cpuFainted) {
           const battleOver = await handleFaintedPokemon(false);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
         }
       }
       
@@ -1240,16 +1304,14 @@ export function useBattle(
         const playerFainted = await processEndOfTurnEffects(playerAfter, activePlayerIndexRef.current, true);
         if (playerFainted) {
           const battleOver = await handleFaintedPokemon(true);
-          if (battleOver) {
-            setIsProcessing(false);
-            return;
-          }
+          if (battleOver) { setIsProcessing(false); return; }
         }
       }
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp, processEndOfTurnEffects, clearFlinchBothSides]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage,
+      setActiveCpuIndex, decrementMovePp, processEndOfTurnEffects, clearFlinchBothSides]);
 
   const executePlayerSwitch = useCallback(async (newIndex: number) => {
     if (isProcessing && forcedSwitch !== 'player') return;
@@ -1375,7 +1437,8 @@ export function useBattle(
     }
 
     setIsProcessing(false);
-  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage, setActiveCpuIndex, decrementMovePp]);
+  }, [isProcessing, performAttack, handleFaintedPokemon, showBattleMessage, hideMessage,
+      setActiveCpuIndex, decrementMovePp]);
 
   const handleRun = useCallback(async () => {
     const player = playerTeamRef.current[activePlayerIndexRef.current];
@@ -1412,6 +1475,10 @@ export function useBattle(
     setSwitchPrompt(false);
     setPendingCpuSwitchIndex(null);
     setAbilityToast({ pokemonName: '', abilityName: '', isPlayer: true, visible: false });
+    setMoveAnimation({ kind: null, moveType: 'normal', isPlayer: true, visible: false });
+    setPlayerStatAnimation({ isIncrease: true, isPlayer: true, visible: false });
+    setCpuStatAnimation({ isIncrease: true, isPlayer: false, visible: false });
+    setConditionAnimation({ visible: false, condition: '', isPlayer: true });
     if (abilityToastTimerRef.current) {
       clearTimeout(abilityToastTimerRef.current);
       abilityToastTimerRef.current = null;
@@ -1432,6 +1499,10 @@ export function useBattle(
     switchPrompt,
     pendingCpuSwitchIndex,
     abilityToast,
+    moveAnimation,
+    playerStatAnimation,
+    cpuStatAnimation,
+    conditionAnimation,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,

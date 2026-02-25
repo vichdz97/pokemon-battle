@@ -8,6 +8,7 @@ import { MoveSelector } from '../battle/MoveSelector';
 import { BagMenu } from '../battle/BagMenu';
 import { PokemonSwitchMenu } from '../battle/PokemonSwitchMenu';
 import { AbilityToast } from '../battle/AbilityToast';
+import { SpecialMoveAnimation, ConditionAnimation } from '../battle/BattleAnimations';
 import { useBattle } from '../../hooks/useBattle';
 import { GlassButton } from '../common/GlassButton';
 import { BattleMove, BattlePokemon } from '../../types/pokemon';
@@ -152,6 +153,10 @@ export function BattleScreen() {
     switchPrompt,
     pendingCpuSwitchIndex,
     abilityToast,
+    moveAnimation,
+    playerStatAnimation,
+    cpuStatAnimation,
+    conditionAnimation,
     executeTurn,
     executePlayerSwitch,
     useItemAndEndTurn,
@@ -447,6 +452,18 @@ export function BattleScreen() {
       
       {/* ===== ARENA SECTION ===== */}
       <div className="flex-1 md:flex-1 h-[66vh] md:h-auto relative p-2 md:p-4 min-h-0">
+        {/* ── Global fixed overlays (z-50, full screen) ── */}
+        <SpecialMoveAnimation
+          visible={!!(moveAnimation.visible && moveAnimation.kind === 'special')}
+          moveType={moveAnimation.moveType}
+          isPlayer={moveAnimation.isPlayer}
+        />
+        <ConditionAnimation
+          visible={conditionAnimation.visible}
+          condition={conditionAnimation.condition}
+          isPlayer={conditionAnimation.isPlayer}
+        />
+
         {/* CPU Pokemon - upper right */}
         <div className="absolute top-4 right-4 md:top-8 md:right-8 scale-75 md:scale-100 origin-top-right">
           <PokemonSprite
@@ -457,10 +474,12 @@ export function BattleScreen() {
             isFainted={activeCpu.currentHp <= 0}
             team={localCpuTeam}
             activeIndex={localCpuIndex}
+            moveAnimation={moveAnimation}
+            statAnimation={cpuStatAnimation}
           />
         </div>
 
-        {/* Player Pokemon - bottom left of arena */}
+        {/* Player Pokemon - bottom left */}
         <div className="absolute bottom-4 left-4 md:bottom-32 md:left-8 scale-75 md:scale-100 origin-bottom-left">
           <PokemonSprite
             pokemon={activePlayer}
@@ -470,6 +489,8 @@ export function BattleScreen() {
             isFainted={activePlayer.currentHp <= 0}
             team={localPlayerTeam}
             activeIndex={localPlayerIndex}
+            moveAnimation={moveAnimation}
+            statAnimation={playerStatAnimation}
           />
         </div>
 
